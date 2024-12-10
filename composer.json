@@ -20,7 +20,7 @@
     "php": ">=8.2",
     "northrook/support": "dev-main",
     "northrook/array-access": "dev-main",
-    "symfony/cache": "^7.2"
+    "symfony/cache": "@stable"
   },
   "require-dev": {
     "symfony/dependency-injection": "@stable",
