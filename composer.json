@@ -1,0 +1,32 @@
+{
+  "name": "northrook/pathfinder",
+  "description": "A PHP library to help find paths and directories at runtime, using predefined key-value pair, or `ParameterBag`.",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Martin",
+      "email": "mn@northrook.com"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "Core\\": "src/"
+    }
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "require": {
+    "php": ">=8.2",
+    "northrook/support": "dev-main",
+    "northrook/array-access": "dev-main",
+    "symfony/cache": "^7.2"
+  },
+  "require-dev": {
+    "symfony/dependency-injection": "@stable",
+    "northrook/dev-env": "dev-main"
+  },
+  "scripts": {
+    "phpstan": "vendor/bin/phpstan analyse"
+  }
+}
