@@ -7,9 +7,30 @@ use Support\FileInfo;
 interface PathfinderInterface
 {
 
-    public function __invoke( string $path, ?string $relativeTo = null ) : ?string;
+    /**
+     * @param string       $path
+     * @param null|string  $relativeTo
+     * @param bool         $assertive
+     *
+     * @return ($assertive is true ? string : null|string)
+     */
+    public function __invoke( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?string;
 
-    public function get( string $path, ?string $relativeTo = null ) : ?string;
+    /**
+     * @param string       $path
+     * @param null|string  $relativeTo
+     * @param bool         $assertive
+     *
+     * @return ($assertive is true ? string : null|string)
+     */
+    public function get( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?string;
 
-    public function getFileInfo( string $path, ?string $relativeTo = null ) : ?FileInfo;
+    /**
+     * @param string       $path
+     * @param null|string  $relativeTo
+     * @param bool         $assertive
+     *
+     * @return ($assertive is true ? FileInfo : null|FileInfo)
+     */
+    public function getFileInfo( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?FileInfo;
 }

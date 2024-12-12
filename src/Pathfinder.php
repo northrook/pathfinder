@@ -27,25 +27,45 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     ) {}
 
     /**
-     *
      * @param string       $path
      * @param null|string  $relativeTo
+     * @param bool         $assertive
      *
-     * @return null|string
+     * @return ($assertive is true ? string : null|string)
      */
-    public function __invoke( string $path, ?string $relativeTo = null ) : ?string
+    public function __invoke( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?string
     {
-        return $this->resolvePath( $path, $relativeTo );
+        return $this->get( $path, $relativeTo, $assertive );
     }
 
-    public function get( string $path, ?string $relativeTo = null ) : ?string
+    /**
+     * @param string       $path
+     * @param null|string  $relativeTo
+     * @param bool         $assertive
+     *
+     * @return ($assertive is true ? string : null|string)
+     */
+    public function get( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?string
     {
-        return $this->resolvePath( $path, $relativeTo );
+        $path = $this->resolvePath( $path, $relativeTo );
+
+        if ( $assertive ) {
+            \assert( \is_string( $path ) );
+        }
+
+        return $path;
     }
 
-    public function getFileInfo( string $path, ?string $relativeTo = null ) : ?FileInfo
+    /**
+     * @param string       $path
+     * @param null|string  $relativeTo
+     * @param bool         $assertive
+     *
+     * @return ($assertive is true ? FileInfo : null|FileInfo)
+     */
+    public function getFileInfo( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?FileInfo
     {
-        return new FileInfo( $this->get( $path, $relativeTo ) );
+        return new FileInfo( $this->get( $path, $relativeTo, $assertive ) );
     }
 
     /**
