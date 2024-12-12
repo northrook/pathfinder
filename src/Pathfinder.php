@@ -12,6 +12,13 @@ use function Support\isPath;
 
 final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 {
+
+    /**
+     * @param array                       $parameters
+     * @param null|ParameterBagInterface  $parameterBag
+     * @param null|PathfinderCache        $cache
+     * @param null|LoggerInterface        $logger
+     */
     public function __construct(
             private array                  $parameters = [],
             private ?ParameterBagInterface $parameterBag = null,
@@ -19,6 +26,13 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             private ?LoggerInterface       $logger = null,
     ) {}
 
+    /**
+     *
+     * @param string       $path
+     * @param null|string  $relativeTo
+     *
+     * @return null|string
+     */
     public function __invoke( string $path, ?string $relativeTo = null ) : ?string
     {
         return $this->resolvePath( $path, $relativeTo );
@@ -51,6 +65,21 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      */
     public function getParameter( string $key ) : ?string
     {
+        \assert(
+                (
+                        \ctype_alnum( \str_replace( '.', '', $key ) ) &&
+                        \str_contains( $key, '.' )
+                        && !\str_starts_with( $key, '.' )
+                        && !\str_ends_with( $key, '.' )
+                ),
+                'Invalid parameter \'' . $key . '\'. Must contain one period, cannot start or end with period.',
+        );
+
+        // Return cached  if found
+        if ( $this->cache?->has( $key ) ) {
+            return $this->cache->get( $key );
+        }
+
         $parameter = $this->parameters[ $key ] ?? null;
 
         if ( !$parameter && $this->parameterBag?->has( $key ) ) {
@@ -75,6 +104,9 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         }
 
         $this->logger?->info( 'Resolved {value} from {key}.', [ 'value' => $parameter, 'path' => $key ] );
+
+        $this->cache?->set( $key, $parameter );
+
         return $parameter;
     }
 
@@ -119,22 +151,15 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
     final protected function resolveParameter( string $string ) : ?string
     {
-        // Normalize separators to a forward slash
-        $path = \str_replace( '\\', '/', $string );
-
-        // dump( $string );
-        // Check for $parameterKey
-        $parameterKey = $this->containsParameterKey( $string );
+        $cacheKey = $this->resolvedPathKey( $string );
 
         // Return cached parameter if found
-        if ( $parameterKey && $this->cache?->has( $parameterKey ) ) {
-            return $this->cache->get( $parameterKey );
+        if ( $this->cache?->has( $cacheKey ) ) {
+            return $this->cache->get( $cacheKey );
         }
 
-        // Return normalized path-like $string when no $parameterKey is found
-        if ( !$parameterKey && isPath( $path ) ) {
-            return $this::normalize( $path );
-        }
+        // Check for $parameterKey
+        [ $parameterKey, $path ] = $this->resolveProvidedString( $string );
 
         // Resolve the $root key.
         $parameter = $this->getParameter( $parameterKey );
@@ -144,9 +169,9 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             return null;
         }
 
-        $resolvedPath = $this::normalize( $parameter, $string );
+        $resolvedPath = $this::normalize( $parameter, $path );
 
-        $this->cache?->set( $parameterKey, $resolvedPath );
+        $this->cache?->set( $cacheKey, $resolvedPath );
 
         return $resolvedPath;
     }
@@ -199,6 +224,13 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         return $path;
     }
 
+    private function resolvedPathKey( string $string, bool $hash = false ) : string
+    {
+        return $hash
+                ? hash( 'xxh3', $string )
+                : \str_replace( [ '{', '}', '(', ')', '/', '\\', '@', ',' . ':' ], '.', $string );
+    }
+
     /**
      * @param string  $string
      *
@@ -206,7 +238,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      *
      * @noinspection PhpUnusedPrivateMethodInspection // used with Symfony\Cache
      */
-    private function cacheKey( string $string ) : string
+    private function cacheKey( string $string, bool $hash = false ) : string
     {
         $string = \str_replace( '\\', '/', $string );
 
@@ -216,8 +248,8 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
         [ $root, $tail ] = \explode( '/', $string, 2 );
         if ( $tail ) {
-            $tail = hash( 'xxh3', $tail );
-            // $tail = \str_replace( [ '{', '}', '(', ')', '/', '\',', '@', ',' . ':' ], '.', $tail );
+            $tail = $hash ? hash( 'xxh3', $tail )
+                    : \str_replace( [ '{', '}', '(', ')', '/', '\',', '@', ',' . ':' ], '.', $tail );
         }
 
         return "%{$root}%$tail";
@@ -226,14 +258,11 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     /**
      * Checks if the passed `$string` starts with a `$parameterKey`.
      *
-     * - `$string` will be normalized.
-     * - `$string` will be separated from `$parameterKey` if found.
-     *
      * @param ?string  $string
      *
-     * @return false|string
+     * @return array{0: false|string, 1: null|string}
      */
-    private function containsParameterKey( ?string &$string ) : false | string
+    private function resolveProvidedString( ?string $string ) : array
     {
         // Normalize separators to a forward slash
         $string = \str_replace( '\\', '/', $string );
@@ -243,16 +272,14 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
         // At least one separator must be present
         if ( !$parameterKey || !\str_contains( $parameterKey, '.' ) ) {
-            return false;
+            return [ false, $string ];
         }
 
         // Keys cannot start or end with a separator
         if ( \str_starts_with( $parameterKey, '.' ) || \str_ends_with( $parameterKey, '.' ) ) {
-            return false;
+            return [ false, $string ];
         }
 
-        $string = \strchr( $string, '/' ) ?: null;
-
-        return $parameterKey;
+        return [ $parameterKey, \strchr( $string, '/' ) ?: null ];
     }
 }
