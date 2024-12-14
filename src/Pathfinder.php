@@ -148,16 +148,20 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
     final protected function resolvePath( string $path, ?string $relativeTo = null ) : ?string
     {
+        if ( $relativeTo ) {
+            $relativeTo = $this->resolveParameter( $relativeTo );
+        }
+
         $path = $this->resolveParameter( $path );
 
         if ( ! $path ) {
             return null;
         }
 
-        if ( $relativeTo ) {
-            $relativeTo = $this->resolveParameter( $relativeTo );
+        dump( [$path, $relativeTo] );
 
-            if ( $relativeTo && \str_starts_with( $relativeTo, $relativeTo ) ) {
+        if ( $relativeTo ) {
+            if ( $relativeTo && \str_starts_with( $path, $relativeTo ) ) {
                 $path = \substr( $path, \strlen( $relativeTo ) );
             }
             else {
@@ -184,6 +188,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     {
         $cacheKey = $this->resolvedPathKey( $string );
 
+        dump( $cacheKey );
         // Return cached parameter if found
         if ( $this->cache?->has( $cacheKey ) ) {
             return $this->cache->get( $cacheKey );
@@ -266,9 +271,27 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
     private function resolvedPathKey( string $string ) : string
     {
-        return $this->hashKeys
-                ? \hash( 'xxh3', $string )
-                : \str_replace( ['{', '}', '(', ')', '/', '\\', '@', ',:'], '.', $string );
+        if ( $this->hashKeys ) {
+            return \hash( 'xxh3', $string );
+        }
+
+        $string = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $string );
+
+        if ( \str_contains( $string, DIRECTORY_SEPARATOR ) ) {
+            [$key, $tail] = \explode( DIRECTORY_SEPARATOR, $string, 2 );
+
+            if ( ! \ctype_alpha( \str_replace( '.', '', $key ) ) ) {
+                $string = \hash( 'xxh3', $string );
+            }
+            else {
+                if ( \str_contains( $tail, DIRECTORY_SEPARATOR ) ) {
+                    $tail = \hash( 'xxh3', $tail );
+                }
+                $string = "{$key}.{$tail}";
+            }
+        }
+
+        return \str_replace( ['{', '}', '(', ')', '/', '\\', '@', ',:'], '.', $string );
     }
 
     /**
@@ -281,10 +304,10 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     private function resolveProvidedString( ?string $string ) : array
     {
         // Normalize separators to a forward slash
-        $string = \str_replace( '\\', '/', $string );
+        $string = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $string );
 
         // We are only concerned with the first segment
-        $parameterKey = \strstr( $string, '/', true ) ?: $string;
+        $parameterKey = \strstr( $string, DIRECTORY_SEPARATOR, true ) ?: $string;
 
         // At least one separator must be present
         if ( ! $parameterKey || ! \str_contains( $parameterKey, '.' ) ) {
@@ -296,6 +319,6 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             return [false, $string];
         }
 
-        return [$parameterKey, \strchr( $string, '/' ) ?: null];
+        return [$parameterKey, \strchr( $string, DIRECTORY_SEPARATOR ) ?: null];
     }
 }
