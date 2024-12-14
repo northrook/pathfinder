@@ -1,6 +1,6 @@
 <?php
 
-declare( strict_types = 1 );
+declare(strict_types=1);
 
 namespace Core;
 
@@ -9,29 +9,31 @@ use Support\FileInfo;
 use Support\Interface\ActionInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use function Support\isPath;
+use InvalidArgumentException;
+use LengthException;
 
 final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 {
-
     /**
-     * @param array                       $parameters
-     * @param null|ParameterBagInterface  $parameterBag
-     * @param null|PathfinderCache        $cache
-     * @param null|LoggerInterface        $logger
-     * @param bool                        $hashKeys
+     * @param array                      $parameters
+     * @param null|ParameterBagInterface $parameterBag
+     * @param null|PathfinderCache       $cache
+     * @param null|LoggerInterface       $logger
+     * @param bool                       $hashKeys
      */
     public function __construct(
-            private array                  $parameters = [],
-            private ?ParameterBagInterface $parameterBag = null,
-            private ?PathfinderCache       $cache = null,
-            private ?LoggerInterface       $logger = null,
-            private bool                   $hashKeys = false,
-    ) {}
+        private array                  $parameters = [],
+        private ?ParameterBagInterface $parameterBag = null,
+        private ?PathfinderCache       $cache = null,
+        private ?LoggerInterface       $logger = null,
+        private bool                   $hashKeys = false,
+    ) {
+    }
 
     /**
-     * @param string       $path
-     * @param null|string  $relativeTo
-     * @param bool         $assertive
+     * @param string      $path
+     * @param null|string $relativeTo
+     * @param bool        $assertive
      *
      * @return ($assertive is true ? string : null|string)
      */
@@ -41,9 +43,9 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     }
 
     /**
-     * @param string       $path
-     * @param null|string  $relativeTo
-     * @param bool         $assertive
+     * @param string      $path
+     * @param null|string $relativeTo
+     * @param bool        $assertive
      *
      * @return ($assertive is true ? string : null|string)
      */
@@ -59,9 +61,9 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     }
 
     /**
-     * @param string       $path
-     * @param null|string  $relativeTo
-     * @param bool         $assertive
+     * @param string      $path
+     * @param null|string $relativeTo
+     * @param bool        $assertive
      *
      * @return ($assertive is true ? FileInfo : null|FileInfo)
      */
@@ -81,20 +83,20 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      *
      * This performs no validation or caching.
      *
-     * @param string  $key
+     * @param string $key
      *
      * @return null|string
      */
     public function getParameter( string $key ) : ?string
     {
         \assert(
-                (
-                        \ctype_alnum( \str_replace( [ '.', '-', '_' ], '', $key ) ) &&
-                        \str_contains( $key, '.' )
-                        && !\str_starts_with( $key, '.' )
-                        && !\str_ends_with( $key, '.' )
-                ),
-                'Invalid parameter \'' . $key . '\'. Must contain one period, cannot start or end with period.',
+            (
+                \ctype_alnum( \str_replace( ['.', '-', '_'], '', $key ) )
+                    && \str_contains( $key, '.' )
+                    && ! \str_starts_with( $key, '.' )
+                    && ! \str_ends_with( $key, '.' )
+            ),
+            'Invalid parameter \''.$key.'\'. Must contain one period, cannot start or end with period.',
         );
 
         // Return cached  if found
@@ -102,34 +104,34 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             return $this->cache->get( $key );
         }
 
-        $parameter = $this->parameters[ $key ] ?? null;
+        $parameter = $this->parameters[$key] ?? null;
 
-        if ( !$parameter && $this->parameterBag?->has( $key ) ) {
+        if ( ! $parameter && $this->parameterBag?->has( $key ) ) {
             $parameter = $this->parameterBag->get( $key );
         }
 
-        if ( !$parameter ) {
-            $value = \is_string( $parameter ) ? "empty string" : gettype( $parameter );
+        if ( ! $parameter ) {
+            $value = \is_string( $parameter ) ? 'empty string' : \gettype( $parameter );
 
             $this->logger?->warning(
-                    'No value for {key}, it is {value}',
-                    [ 'value' => $value, 'key' => $key ],
+                'No value for {key}, it is {value}',
+                ['value' => $value, 'key' => $key],
             );
             return null;
         }
 
         $parameter = $this::normalize( $parameter );
 
-        if ( !isPath( $parameter ) ) {
-            $this->logger?->warning( 'The value for {key}, is not path-like.', [ 'key' => $key ] );
+        if ( ! isPath( $parameter ) ) {
+            $this->logger?->warning( 'The value for {key}, is not path-like.', ['key' => $key] );
             return null;
         }
 
-        $exists = file_exists( $parameter );
+        $exists = \file_exists( $parameter );
 
         $this->logger?->info(
-                'Pathfinder: Exists {exists} - {value} from {key}.',
-                [ 'exists' => $exists, 'value' => $parameter, 'key' => $key ],
+            'Pathfinder: Exists {exists} - {value} from {key}.',
+            ['exists' => $exists, 'value' => $parameter, 'key' => $key],
         );
 
         if ( $exists ) {
@@ -141,14 +143,14 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
     public function hasParameter( string $key ) : bool
     {
-        return $this->parameters[ $key ] ?? $this->parameterBag?->has( $key ) ?? false;
+        return $this->parameters[$key] ?? $this->parameterBag?->has( $key ) ?? false;
     }
 
     final protected function resolvePath( string $path, ?string $relativeTo = null ) : ?string
     {
         $path = $this->resolveParameter( $path );
 
-        if ( !$path ) {
+        if ( ! $path ) {
             return null;
         }
 
@@ -159,18 +161,18 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
                 $path = \substr( $path, \strlen( $relativeTo ) );
             }
             else {
-                if ( !$relativeTo ) {
-                    $relativeTo = \is_string( $relativeTo ) ? "empty string" : gettype( $relativeTo );
+                if ( ! $relativeTo ) {
+                    $relativeTo = \is_string( $relativeTo ) ? 'empty string' : \gettype( $relativeTo );
                 }
 
                 $this->logger?->critical(
-                        "Relative path {relativeTo} to {path}, is not valid.",
-                        [ 'relativeTo' => $relativeTo, 'path' => $path, ],
+                    'Relative path {relativeTo} to {path}, is not valid.',
+                    ['relativeTo' => $relativeTo, 'path' => $path],
                 );
 
-                if ( !$this->logger ) {
+                if ( ! $this->logger ) {
                     $message = "Relative path [{$relativeTo}][{$path}], is not valid.";
-                    throw new \InvalidArgumentException( $message );
+                    throw new InvalidArgumentException( $message );
                 }
             }
         }
@@ -188,29 +190,30 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         }
 
         // Check for $parameterKey
-        [ $parameterKey, $path ] = $this->resolveProvidedString( $string );
+        [$parameterKey, $path] = $this->resolveProvidedString( $string );
 
-        // Resolve the $root key.
-        $parameter = $this->getParameter( $parameterKey );
+        if ( $parameterKey ) {
+            $parameter = $this->getParameter( $parameterKey );
 
-        // Bail early on empty parameters
-        if ( !$parameter ) {
-            return null;
+            // Bail early on empty parameters
+            if ( ! $parameter ) {
+                return null;
+            }
+
+            $path = $this::normalize( $parameter, $path );
         }
 
-        $resolvedPath = $this::normalize( $parameter, $path );
-
-        if ( file_exists( $resolvedPath ) ) {
-            $this->cache?->set( $cacheKey, $resolvedPath );
+        if ( \file_exists( $path ) ) {
+            $this->cache?->set( $cacheKey, $path );
         }
         else {
             $this->logger?->error(
-                    "Pathfinder: Unable to resolve {parameterKey}, the parameter does not provide a valid path.",
-                    [ 'parameterKey' => $parameterKey ],
+                'Pathfinder: Unable to resolve {parameterKey}, the parameter does not provide a valid path.',
+                ['parameterKey' => $parameterKey],
             );
         }
 
-        return $resolvedPath;
+        return $path;
     }
 
     /**
@@ -226,14 +229,14 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      * // => '.\assets\scripts\example.js'
      * ```
      *
-     * @param ?string  ...$path
+     * @param ?string ...$path
      */
     public static function normalize( ?string ...$path ) : string
     {
         // Normalize separators
-        $nroamlized = \str_replace( [ '\\', '/' ], DIRECTORY_SEPARATOR, $path );
+        $nroamlized = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $path );
 
-        $isRelative = DIRECTORY_SEPARATOR === $nroamlized[ 0 ];
+        $isRelative = DIRECTORY_SEPARATOR === $nroamlized[0];
 
         // Implode->Explode for separator deduplication
         $exploded = \explode( DIRECTORY_SEPARATOR, \implode( DIRECTORY_SEPARATOR, $nroamlized ) );
@@ -249,13 +252,13 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             $length  = (string) $length;
             $limit   = (string) $limit;
             $message = "{$method} resulted in a string of {$length}, exceeding the {$limit} character limit.";
-            $result  = "Operation was halted to prevent overflow.";
-            throw new \LengthException( $message . PHP_EOL . $result );
+            $result  = 'Operation was halted to prevent overflow.';
+            throw new LengthException( $message.PHP_EOL.$result );
         }
 
         // Preserve intended relative paths
         if ( $isRelative ) {
-            $path = DIRECTORY_SEPARATOR . $path;
+            $path = DIRECTORY_SEPARATOR.$path;
         }
 
         return $path;
@@ -264,14 +267,14 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     private function resolvedPathKey( string $string ) : string
     {
         return $this->hashKeys
-                ? hash( 'xxh3', $string )
-                : \str_replace( [ '{', '}', '(', ')', '/', '\\', '@', ',' . ':' ], '.', $string );
+                ? \hash( 'xxh3', $string )
+                : \str_replace( ['{', '}', '(', ')', '/', '\\', '@', ',:'], '.', $string );
     }
 
     /**
      * Checks if the passed `$string` starts with a `$parameterKey`.
      *
-     * @param ?string  $string
+     * @param ?string $string
      *
      * @return array{0: false|string, 1: null|string}
      */
@@ -284,15 +287,15 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         $parameterKey = \strstr( $string, '/', true ) ?: $string;
 
         // At least one separator must be present
-        if ( !$parameterKey || !\str_contains( $parameterKey, '.' ) ) {
-            return [ false, $string ];
+        if ( ! $parameterKey || ! \str_contains( $parameterKey, '.' ) ) {
+            return [false, $string];
         }
 
         // Keys cannot start or end with a separator
         if ( \str_starts_with( $parameterKey, '.' ) || \str_ends_with( $parameterKey, '.' ) ) {
-            return [ false, $string ];
+            return [false, $string];
         }
 
-        return [ $parameterKey, \strchr( $string, '/' ) ?: null ];
+        return [$parameterKey, \strchr( $string, '/' ) ?: null];
     }
 }
