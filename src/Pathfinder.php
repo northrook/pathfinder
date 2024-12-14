@@ -18,12 +18,14 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      * @param null|ParameterBagInterface  $parameterBag
      * @param null|PathfinderCache        $cache
      * @param null|LoggerInterface        $logger
+     * @param bool                        $hashKeys
      */
     public function __construct(
             private array                  $parameters = [],
             private ?ParameterBagInterface $parameterBag = null,
             private ?PathfinderCache       $cache = null,
             private ?LoggerInterface       $logger = null,
+            private bool                   $hashKeys = false,
     ) {}
 
     /**
@@ -87,7 +89,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     {
         \assert(
                 (
-                        \ctype_alnum( \str_replace( '.', '', $key ) ) &&
+                        \ctype_alnum( \str_replace( [ '.', '-', '_' ], '', $key ) ) &&
                         \str_contains( $key, '.' )
                         && !\str_starts_with( $key, '.' )
                         && !\str_ends_with( $key, '.' )
@@ -123,9 +125,16 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             return null;
         }
 
-        $this->logger?->info( 'Resolved {value} from {key}.', [ 'value' => $parameter, 'path' => $key ] );
+        $exists = file_exists( $parameter );
 
-        $this->cache?->set( $key, $parameter );
+        $this->logger?->info(
+                'Pathfinder: Exists {exists} - {value} from {key}.',
+                [ 'exists' => $exists, 'value' => $parameter, 'key' => $key ],
+        );
+
+        if ( $exists ) {
+            $this->cache?->set( $key, $parameter );
+        }
 
         return $parameter;
     }
@@ -191,7 +200,15 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
         $resolvedPath = $this::normalize( $parameter, $path );
 
-        $this->cache?->set( $cacheKey, $resolvedPath );
+        if ( file_exists( $resolvedPath ) ) {
+            $this->cache?->set( $cacheKey, $resolvedPath );
+        }
+        else {
+            $this->logger?->error(
+                    "Pathfinder: Unable to resolve {parameterKey}, the parameter does not provide a valid path.",
+                    [ 'parameterKey' => $parameterKey ],
+            );
+        }
 
         return $resolvedPath;
     }
@@ -244,35 +261,11 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         return $path;
     }
 
-    private function resolvedPathKey( string $string, bool $hash = false ) : string
+    private function resolvedPathKey( string $string ) : string
     {
-        return $hash
+        return $this->hashKeys
                 ? hash( 'xxh3', $string )
                 : \str_replace( [ '{', '}', '(', ')', '/', '\\', '@', ',' . ':' ], '.', $string );
-    }
-
-    /**
-     * @param string  $string
-     *
-     * @return string
-     *
-     * @noinspection PhpUnusedPrivateMethodInspection // used with Symfony\Cache
-     */
-    private function cacheKey( string $string, bool $hash = false ) : string
-    {
-        $string = \str_replace( '\\', '/', $string );
-
-        if ( !\str_contains( $string, '/' ) ) {
-            return $string;
-        }
-
-        [ $root, $tail ] = \explode( '/', $string, 2 );
-        if ( $tail ) {
-            $tail = $hash ? hash( 'xxh3', $tail )
-                    : \str_replace( [ '{', '}', '(', ')', '/', '\',', '@', ',' . ':' ], '.', $tail );
-        }
-
-        return "%{$root}%$tail";
     }
 
     /**
