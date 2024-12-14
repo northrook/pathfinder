@@ -1,10 +1,9 @@
 <?php
 
-declare(strict_types=1);
-
 namespace Core;
 
 use Northrook\ArrayStore;
+use Support\Normalize;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 
 /**
@@ -15,17 +14,35 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
  */
 final class PathfinderCache extends ArrayStore
 {
-    public static function precompile( array|ParameterBagInterface ...$parameters ) : array
+    /**
+     * @param array<string,string>|ParameterBagInterface|string ...$parameters
+     *
+     * @return array<string, string>
+     */
+    public static function precompile( array|ParameterBagInterface|string ...$parameters ) : array
     {
         $precompiled = [];
 
+        $parse = [];
+
         foreach ( $parameters as $index => $parameter ) {
-            if ( $parameter instanceof ParameterBagInterface ) {
-                $parameters[$index] = $parameter->all();
+            if ( \is_string( $parameter ) ) {
+                $parse[] = $parameter;
+            }
+            elseif ( \is_array( $parameter ) ) {
+                $parse = \array_merge( $parse, $parameter );
+            }
+            elseif ( $parameter instanceof ParameterBagInterface ) {
+                $parse = \array_merge( $parse, $parameter->all() );
             }
         }
 
-        dump( $parameters );
+        foreach ( $parse as $parameterKey => $parameterValue ) {
+            if ( ! \is_string( $parameterValue ) ) {
+                continue;
+            }
+            $precompiled[$parameterKey] = Normalize::path( $parameterValue );
+        }
 
         return $precompiled;
     }
