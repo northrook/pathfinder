@@ -15,11 +15,11 @@ use LengthException;
 final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 {
     /**
-     * @param array                      $parameters
-     * @param null|ParameterBagInterface $parameterBag
-     * @param null|PathfinderCache       $cache
-     * @param null|LoggerInterface       $logger
-     * @param bool                       $hashKeys
+     * @param array<string, string>               $parameters
+     * @param null|ParameterBagInterface          $parameterBag
+     * @param null|PathfinderCache<string,string> $cache
+     * @param null|LoggerInterface                $logger
+     * @param bool                                $hashKeys
      */
     public function __construct(
         private array                  $parameters = [],
@@ -69,7 +69,9 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      */
     public function getFileInfo( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?FileInfo
     {
-        return new FileInfo( $this->get( $path, $relativeTo, $assertive ) );
+        $path = $this->get( $path, $relativeTo, $assertive );
+
+        return $path ? new FileInfo( $path ) : null;
     }
 
     /**
@@ -110,7 +112,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             $parameter = $this->parameterBag->get( $key );
         }
 
-        if ( ! $parameter ) {
+        if ( ! $parameter || ! \is_string( $parameter ) ) {
             $value = \is_string( $parameter ) ? 'empty string' : \gettype( $parameter );
 
             $this->logger?->warning(
@@ -141,45 +143,81 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         return $parameter;
     }
 
+    /**
+     * Check if a key exists in {@see self::$parameters} or a provided {@see self::$parameterBag}.
+     *
+     * @param string $key
+     *
+     * @return bool
+     */
     public function hasParameter( string $key ) : bool
     {
-        return $this->parameters[$key] ?? $this->parameterBag?->has( $key ) ?? false;
+        return \array_key_exists( $key, $this->parameters ) || $this->parameterBag?->has( $key );
     }
 
     final protected function resolvePath( string $path, ?string $relativeTo = null ) : ?string
     {
+        // Resolve potential relative path first
         if ( $relativeTo ) {
             $relativeTo = $this->resolveParameter( $relativeTo );
         }
 
+        // Resolve the requested path
         $path = $this->resolveParameter( $path );
 
+        // Bail early if no path is found
         if ( ! $path ) {
             return null;
         }
 
-        dump( [$path, $relativeTo] );
-
+        // If relative, and relative path exists
         if ( $relativeTo ) {
-            if ( $relativeTo && \str_starts_with( $path, $relativeTo ) ) {
+            // Check they match
+            if ( \str_starts_with( $path, $relativeTo ) ) {
+                // Subtract the relative path
                 $path = \substr( $path, \strlen( $relativeTo ) );
             }
+            // Handle mismatched relative paths
             else {
-                if ( ! $relativeTo ) {
-                    $relativeTo = \is_string( $relativeTo ) ? 'empty string' : \gettype( $relativeTo );
+                if ( $this->logger ) {
+                    $this->logger->critical(
+                        'Relative path {relativeTo} to {path}, is not valid.',
+                        ['relativeTo' => $relativeTo, 'path' => $path],
+                    );
                 }
-
-                $this->logger?->critical(
-                    'Relative path {relativeTo} to {path}, is not valid.',
-                    ['relativeTo' => $relativeTo, 'path' => $path],
-                );
-
-                if ( ! $this->logger ) {
+                else {
                     $message = "Relative path [{$relativeTo}][{$path}], is not valid.";
                     throw new InvalidArgumentException( $message );
                 }
             }
         }
+        //
+        //
+        //     if ( \str_starts_with( $path, $relativeTo ) ) {
+        //     $path = \substr( $path, \strlen( $relativeTo ) );
+        // }
+        //
+        // dump( [$path, $relativeTo] );
+        // {
+        //     if ( \str_starts_with( $path, $relativeTo ) ) {
+        //         $path = \substr( $path, \strlen( $relativeTo ) );
+        //     }
+        //     else {
+        //         if ( ! $relativeTo ) {
+        //             $relativeTo = \is_string( $relativeTo ) ? 'empty string' : \gettype( $relativeTo );
+        //         }
+        //
+        //         $this->logger?->critical(
+        //             'Relative path {relativeTo} to {path}, is not valid.',
+        //             ['relativeTo' => $relativeTo, 'path' => $path],
+        //         );
+        //
+        //         if ( ! $this->logger ) {
+        //             $message = "Relative path [{$relativeTo}][{$path}], is not valid.";
+        //             throw new InvalidArgumentException( $message );
+        //         }
+        //     }
+        // }
 
         return $path;
     }
@@ -188,7 +226,6 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     {
         $cacheKey = $this->resolvedPathKey( $string );
 
-        dump( $cacheKey );
         // Return cached parameter if found
         if ( $this->cache?->has( $cacheKey ) ) {
             return $this->cache->get( $cacheKey );
@@ -234,9 +271,9 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      * // => '.\assets\scripts\example.js'
      * ```
      *
-     * @param ?string ...$path
+     * @param string ...$path
      */
-    public static function normalize( ?string ...$path ) : string
+    public static function normalize( string ...$path ) : string
     {
         // Normalize separators
         $nroamlized = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $path );
@@ -297,11 +334,11 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     /**
      * Checks if the passed `$string` starts with a `$parameterKey`.
      *
-     * @param ?string $string
+     * @param string $string
      *
-     * @return array{0: false|string, 1: null|string}
+     * @return array{0: false|string, 1: string}
      */
-    private function resolveProvidedString( ?string $string ) : array
+    private function resolveProvidedString( string $string ) : array
     {
         // Normalize separators to a forward slash
         $string = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $string );
@@ -319,6 +356,6 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             return [false, $string];
         }
 
-        return [$parameterKey, \strchr( $string, DIRECTORY_SEPARATOR ) ?: null];
+        return [$parameterKey, \strchr( $string, DIRECTORY_SEPARATOR ) ?: ''];
     }
 }
