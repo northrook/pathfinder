@@ -11,6 +11,7 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use function Support\isPath;
 use InvalidArgumentException;
 use LengthException;
+use Stringable;
 
 final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 {
@@ -20,6 +21,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      * @param null|PathfinderCache<string,string> $cache
      * @param null|LoggerInterface                $logger
      * @param bool                                $hashKeys
+     * @param bool                                $debug
      */
     public function __construct(
         private array                  $parameters = [],
@@ -27,31 +29,35 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         private ?PathfinderCache       $cache = null,
         private ?LoggerInterface       $logger = null,
         private bool                   $hashKeys = false,
+        private bool                   $debug = false,
     ) {
     }
 
     /**
-     * @param string      $path
-     * @param null|string $relativeTo
-     * @param bool        $assertive
+     * @param string|Stringable $path
+     * @param null|string       $relativeTo
+     * @param bool              $assertive
      *
      * @return ($assertive is true ? string : null|string)
      */
-    public function __invoke( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?string
-    {
-        return $this->get( $path, $relativeTo, $assertive );
+    public function __invoke(
+        string|Stringable $path,
+        ?string           $relativeTo = null,
+        bool              $assertive = false,
+    ) : ?string {
+        return $this->get( (string) $path, $relativeTo, $assertive );
     }
 
     /**
-     * @param string      $path
-     * @param null|string $relativeTo
-     * @param bool        $assertive
+     * @param string|Stringable $path
+     * @param null|string       $relativeTo
+     * @param bool              $assertive
      *
      * @return ($assertive is true ? string : null|string)
      */
-    public function get( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?string
+    public function get( string|Stringable $path, ?string $relativeTo = null, bool $assertive = false ) : ?string
     {
-        $path = $this->resolvePath( $path, $relativeTo );
+        $path = $this->resolvePath( (string) $path, $relativeTo );
 
         if ( $assertive ) {
             \assert( \is_string( $path ) );
@@ -61,14 +67,17 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     }
 
     /**
-     * @param string      $path
-     * @param null|string $relativeTo
-     * @param bool        $assertive
+     * @param string|Stringable $path
+     * @param null|string       $relativeTo
+     * @param bool              $assertive
      *
      * @return ($assertive is true ? FileInfo : null|FileInfo)
      */
-    public function getFileInfo( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?FileInfo
-    {
+    public function getFileInfo(
+        string|Stringable $path,
+        ?string           $relativeTo = null,
+        bool              $assertive = false,
+    ) : ?FileInfo {
         $path = $this->get( $path, $relativeTo, $assertive );
 
         return $path ? new FileInfo( $path ) : null;
@@ -191,33 +200,6 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
                 }
             }
         }
-        //
-        //
-        //     if ( \str_starts_with( $path, $relativeTo ) ) {
-        //     $path = \substr( $path, \strlen( $relativeTo ) );
-        // }
-        //
-        // dump( [$path, $relativeTo] );
-        // {
-        //     if ( \str_starts_with( $path, $relativeTo ) ) {
-        //         $path = \substr( $path, \strlen( $relativeTo ) );
-        //     }
-        //     else {
-        //         if ( ! $relativeTo ) {
-        //             $relativeTo = \is_string( $relativeTo ) ? 'empty string' : \gettype( $relativeTo );
-        //         }
-        //
-        //         $this->logger?->critical(
-        //             'Relative path {relativeTo} to {path}, is not valid.',
-        //             ['relativeTo' => $relativeTo, 'path' => $path],
-        //         );
-        //
-        //         if ( ! $this->logger ) {
-        //             $message = "Relative path [{$relativeTo}][{$path}], is not valid.";
-        //             throw new InvalidArgumentException( $message );
-        //         }
-        //     }
-        // }
 
         return $path;
     }
@@ -245,10 +227,11 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             $path = $this::normalize( $parameter, $path );
         }
 
-        if ( \file_exists( $path ) ) {
+        if ( $exists = \file_exists( $path ) ) {
             $this->cache?->set( $cacheKey, $path );
         }
-        else {
+
+        if ( ! $exists && $this->debug ) {
             $this->logger?->error(
                 'Pathfinder: Unable to resolve {parameterKey}, the parameter does not provide a valid path.',
                 ['parameterKey' => $parameterKey],
