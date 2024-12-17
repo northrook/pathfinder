@@ -111,7 +111,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         );
 
         // Return cached parameter if found
-        $cached = $this->cache->get( $key );
+        $cached = $this->cache?->get( $key );
         if ( $cached ) {
             return $cached;
         }
@@ -210,7 +210,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         $cacheKey = $this->resolvedPathKey( $string );
 
         // Return cached parameter if found
-        $cached = $this->cache->get( $cacheKey );
+        $cached = $this->cache?->get( $cacheKey );
         if ( $cached ) {
             return $cached;
         }
