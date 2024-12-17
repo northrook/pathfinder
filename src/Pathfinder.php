@@ -110,9 +110,10 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             'Invalid parameter \''.$key.'\'. Must contain one period, cannot start or end with period.',
         );
 
-        // Return cached  if found
-        if ( $this->cache?->has( $key ) ) {
-            return $this->cache->get( $key );
+        // Return cached parameter if found
+        $cached = $this->cache->get( $key );
+        if ( $cached ) {
+            return $cached;
         }
 
         $parameter = $this->parameters[$key] ?? null;
@@ -209,10 +210,10 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         $cacheKey = $this->resolvedPathKey( $string );
 
         // Return cached parameter if found
-        if ( $this->cache?->has( $cacheKey ) ) {
-            return $this->cache->get( $cacheKey );
+        $cached = $this->cache->get( $cacheKey );
+        if ( $cached ) {
+            return $cached;
         }
-
         // Check for $parameterKey
         [$parameterKey, $path] = $this->resolveProvidedString( $string );
 
