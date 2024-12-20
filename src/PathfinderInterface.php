@@ -16,7 +16,11 @@ interface PathfinderInterface
      *
      * @return ($assertive is true ? string : null|string)
      */
-    public function __invoke( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?string;
+    public function __invoke(
+        string|Stringable $path,
+        ?string           $relativeTo = null,
+        bool              $assertive = false,
+    ) : ?string;
 
     /**
      * @param string|Stringable $path
@@ -25,7 +29,11 @@ interface PathfinderInterface
      *
      * @return ($assertive is true ? string : null|string)
      */
-    public function get( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?string;
+    public function get(
+        string|Stringable $path,
+        ?string           $relativeTo = null,
+        bool              $assertive = false,
+    ) : ?string;
 
     /**
      * @param string|Stringable $path
@@ -34,5 +42,9 @@ interface PathfinderInterface
      *
      * @return ($assertive is true ? FileInfo : null|FileInfo)
      */
-    public function getFileInfo( string $path, ?string $relativeTo = null, bool $assertive = false ) : ?FileInfo;
+    public function getFileInfo(
+        string|Stringable $path,
+        ?string           $relativeTo = null,
+        bool              $assertive = false,
+    ) : ?FileInfo;
 }
