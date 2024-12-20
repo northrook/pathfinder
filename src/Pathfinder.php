@@ -8,10 +8,8 @@ use Psr\Log\LoggerInterface;
 use Support\FileInfo;
 use Support\Interface\ActionInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
+use Stringable, LengthException, InvalidArgumentException;
 use function Support\isPath;
-use InvalidArgumentException;
-use LengthException;
-use Stringable;
 
 final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 {
@@ -111,8 +109,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         );
 
         // Return cached parameter if found
-        $cached = $this->cache?->get( $key );
-        if ( $cached ) {
+        if ( $cached = $this->cache?->get( $key ) ) {
             return $cached;
         }
 
@@ -210,10 +207,10 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         $cacheKey = $this->resolvedPathKey( $string );
 
         // Return cached parameter if found
-        $cached = $this->cache?->get( $cacheKey );
-        if ( $cached ) {
+        if ( $cached = $this->cache?->get( $cacheKey ) ) {
             return $cached;
         }
+
         // Check for $parameterKey
         [$parameterKey, $path] = $this->resolveProvidedString( $string );
 
