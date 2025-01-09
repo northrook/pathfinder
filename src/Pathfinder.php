@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Core;
 
+use Core\Symfony\DependencyInjection\Autodiscover;
 use Psr\Log\LoggerInterface;
 use Support\FileInfo;
 use Support\Interface\ActionInterface;
@@ -11,6 +12,9 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Stringable, LengthException, InvalidArgumentException;
 use function Support\isPath;
 
+#[Autodiscover(
+    tag : ['monolog.logger' => ['channel' => 'pathfinder']],
+)]
 final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 {
     /**
@@ -28,8 +32,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         private ?LoggerInterface       $logger = null,
         private bool                   $hashKeys = false,
         private bool                   $debug = false,
-    ) {
-    }
+    ) {}
 
     /**
      * @param string|Stringable $path
