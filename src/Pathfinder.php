@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Core;
 
-use Core\Symfony\DependencyInjection\Autodiscover;
-use Northrook\Clerk;
 use Psr\Log\LoggerInterface;
+use Northrook\Clerk;
 use Support\FileInfo;
 use Support\Interface\ActionInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
+use Core\Symfony\DependencyInjection\Autodiscover;
 use Stringable, LengthException, InvalidArgumentException;
 use function Support\isPath;
 

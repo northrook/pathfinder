@@ -18,9 +18,8 @@
   "prefer-stable": true,
   "require": {
     "php": ">=8.2",
+    "ext-zend opcache": "*",
     "northrook/support": "dev-main",
-    "northrook/array-access": "dev-main",
-    "symfony/cache": "@stable",
     "northrook/core-symfony": "dev-main"
   },
   "require-dev": {
