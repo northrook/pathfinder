@@ -15,7 +15,7 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
     tag      : ['monolog.logger' => ['channel' => 'pathfinder']],
     lazy     : false,
     public   : false,
-    shared   : false,
+    shared   : true,
     autowire : true,
 )]
 final readonly class PathfinderCache
