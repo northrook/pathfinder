@@ -9,7 +9,7 @@
 /*.cache
 /*.lock
 /*.css
-/index.php
+/*.php
 /package-lock.json
 
 ### Symfony

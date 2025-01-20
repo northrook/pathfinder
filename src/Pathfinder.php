@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Core;
 
 use Core\Symfony\DependencyInjection\Autodiscover;
+use Northrook\Clerk;
 use Psr\Log\LoggerInterface;
 use Support\FileInfo;
 use Support\Interface\ActionInterface;
@@ -18,19 +19,17 @@ use function Support\isPath;
 final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 {
     /**
-     * @param array<string, string>               $parameters
-     * @param null|ParameterBagInterface          $parameterBag
-     * @param null|PathfinderCache<string,string> $cache
-     * @param null|LoggerInterface                $logger
-     * @param bool                                $hashKeys
-     * @param bool                                $debug
+     * @param array<string, string>      $parameters   [placeholder]
+     * @param null|ParameterBagInterface $parameterBag
+     * @param null|PathfinderCache       $cache
+     * @param null|LoggerInterface       $logger
+     * @param bool                       $debug
      */
     public function __construct(
         private array                  $parameters = [],
         private ?ParameterBagInterface $parameterBag = null,
         private ?PathfinderCache       $cache = null,
         private ?LoggerInterface       $logger = null,
-        private bool                   $hashKeys = false,
         private bool                   $debug = false,
     ) {}
 
@@ -46,25 +45,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         ?string           $relativeTo = null,
         bool              $assertive = false,
     ) : ?string {
-        return $this->get( (string) $path, $relativeTo, $assertive );
-    }
-
-    /**
-     * @param string|Stringable $path
-     * @param null|string       $relativeTo
-     * @param bool              $assertive
-     *
-     * @return ($assertive is true ? string : null|string)
-     */
-    public function get( string|Stringable $path, ?string $relativeTo = null, bool $assertive = false ) : ?string
-    {
-        $path = $this->resolvePath( (string) $path, $relativeTo );
-
-        if ( $assertive ) {
-            \assert( \is_string( $path ) );
-        }
-
-        return $path;
+        return $this->get( $path, $relativeTo, $assertive );
     }
 
     /**
@@ -84,7 +65,58 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         return $path ? new FileInfo( $path ) : null;
     }
 
+    private function cacheKey( null|string|bool|int|Stringable ...$from ) : string
+    {
+        return \hash( 'xxh3', \implode( '', $from ) );
+    }
+
     /**
+     * @param string|Stringable $path
+     * @param null|string       $relativeTo
+     * @param bool              $assertive
+     *
+     * @return ($assertive is true ? string : null|string)
+     */
+    public function get(
+        string|Stringable $path,
+        ?string           $relativeTo = null,
+        bool              $assertive = false,
+    ) : ?string {
+        if ( $this->debug ) {
+            Clerk::event( __METHOD__, $this::class );
+        }
+
+        $key = $this->cacheKey( $path.$relativeTo );
+
+        $resolvedPath = $this->cache?->get( $key );
+
+        $resolvedPath ??= $this->resolvePath( (string) $path, $relativeTo );
+
+        \assert( \is_string( $resolvedPath ) );
+
+        $exists = \file_exists( $resolvedPath );
+
+        if ( $exists ) {
+            $this->cache?->set( $key, $resolvedPath );
+        }
+        else {
+            $this->cache?->delete( $key );
+        }
+
+        if ( $this->debug ) {
+            Clerk::stop( __METHOD__ );
+        }
+
+        if ( ! $assertive && ! $exists ) {
+            return null;
+        }
+
+        return $resolvedPath;
+    }
+
+    /**
+     * ✅
+     *
      * Return a `parameter` value by `key`.
      *
      * Will look in:
@@ -92,8 +124,6 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      * 2. {@see Pathfinder::$parameterBag}
      *
      * Returns `null` on failure.
-     *
-     * This performs no validation or caching.
      *
      * @param string $key
      *
@@ -111,8 +141,10 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             'Invalid parameter \''.$key.'\'. Must contain one period, cannot start or end with period.',
         );
 
+        $cacheKey = $this->cacheKey( $key );
+
         // Return cached parameter if found
-        if ( $cached = $this->cache?->get( $key ) ) {
+        if ( $cached = $this->cache?->get( $cacheKey ) ) {
             return $cached;
         }
 
@@ -122,8 +154,11 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             $parameter = $this->parameterBag->get( $key );
         }
 
+        // Handle
         if ( ! $parameter || ! \is_string( $parameter ) ) {
-            $value = \is_string( $parameter ) ? 'empty string' : \gettype( $parameter );
+            $value = \is_string( $parameter )
+                    ? 'empty string'
+                    : \gettype( $parameter );
 
             $this->logger?->warning(
                 'No value for {key}, it is {value}',
@@ -147,7 +182,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         );
 
         if ( $exists ) {
-            $this->cache?->set( $key, $parameter );
+            $this->cache?->set( $cacheKey, $parameter );
         }
 
         return $parameter;
@@ -207,7 +242,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
     final protected function resolveParameter( string $string ) : ?string
     {
-        $cacheKey = $this->resolvedPathKey( $string );
+        $cacheKey = $this->cacheKey( $string );
 
         // Return cached parameter if found
         if ( $cached = $this->cache?->get( $cacheKey ) ) {
@@ -288,31 +323,6 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         }
 
         return $path;
-    }
-
-    private function resolvedPathKey( string $string ) : string
-    {
-        if ( $this->hashKeys ) {
-            return \hash( 'xxh3', $string );
-        }
-
-        $string = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $string );
-
-        if ( \str_contains( $string, DIRECTORY_SEPARATOR ) ) {
-            [$key, $tail] = \explode( DIRECTORY_SEPARATOR, $string, 2 );
-
-            if ( ! \ctype_alpha( \str_replace( '.', '', $key ) ) ) {
-                $string = \hash( 'xxh3', $string );
-            }
-            else {
-                if ( \str_contains( $tail, DIRECTORY_SEPARATOR ) ) {
-                    $tail = \hash( 'xxh3', $tail );
-                }
-                $string = "{$key}.{$tail}";
-            }
-        }
-
-        return \str_replace( ['{', '}', '(', ')', '/', '\\', '@', ',:'], '.', $string );
     }
 
     /**
