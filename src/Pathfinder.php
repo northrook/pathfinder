@@ -36,31 +36,27 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     /**
      * @param string|Stringable $path
      * @param null|string       $relativeTo
-     * @param bool              $assertive
      *
-     * @return ($assertive is true ? string : null|string)
+     * @return ?string
      */
     public function __invoke(
         string|Stringable $path,
         ?string           $relativeTo = null,
-        bool              $assertive = false,
     ) : ?string {
-        return $this->get( $path, $relativeTo, $assertive );
+        return $this->get( $path, $relativeTo );
     }
 
     /**
      * @param string|Stringable $path
      * @param null|string       $relativeTo
-     * @param bool              $assertive
      *
-     * @return ($assertive is true ? FileInfo : null|FileInfo)
+     * @return ?FileInfo
      */
     public function getFileInfo(
         string|Stringable $path,
         ?string           $relativeTo = null,
-        bool              $assertive = false,
     ) : ?FileInfo {
-        $path = $this->get( $path, $relativeTo, $assertive );
+        $path = $this->get( $path, $relativeTo );
 
         return $path ? new FileInfo( $path ) : null;
     }
@@ -73,14 +69,12 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     /**
      * @param string|Stringable $path
      * @param null|string       $relativeTo
-     * @param bool              $assertive
      *
-     * @return ($assertive is true ? string : null|string)
+     * @return ?string
      */
     public function get(
         string|Stringable $path,
         ?string           $relativeTo = null,
-        bool              $assertive = false,
     ) : ?string {
         if ( $this->debug ) {
             Clerk::event( __METHOD__, $this::class );
@@ -92,11 +86,10 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
         $resolvedPath ??= $this->resolvePath( (string) $path, $relativeTo );
 
-        \assert( \is_string( $resolvedPath ) );
-
-        $exists = \file_exists( $resolvedPath );
-
-        if ( $exists ) {
+        if ( ! $resolvedPath ) {
+            $this->logger?->warning( 'Unable to resolve path "'.$path.'".' );
+        }
+        elseif ( \file_exists( $resolvedPath ) || $relativeTo ) {
             $this->cache?->set( $key, $resolvedPath );
         }
         else {
@@ -107,16 +100,10 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             Clerk::stop( __METHOD__ );
         }
 
-        if ( ! $assertive && ! $exists ) {
-            return null;
-        }
-
         return $resolvedPath;
     }
 
     /**
-     * ✅
-     *
      * Return a `parameter` value by `key`.
      *
      * Will look in:
