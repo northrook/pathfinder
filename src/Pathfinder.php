@@ -153,13 +153,14 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
         $exists = \file_exists( $parameter );
 
-        $this->logger?->info(
-            'Pathfinder: Exists {exists} - {value} from {key}.',
-            ['exists' => $exists, 'value' => $parameter, 'key' => $key],
-        );
-
         if ( $exists ) {
             $this->cache?->set( $cacheKey, $parameter );
+        }
+        else {
+            $this->logger?->info(
+                'Pathfinder: Exists {exists} - {value} from {key}.',
+                ['exists' => $exists, 'value' => $parameter, 'key' => $key],
+            );
         }
 
         return $parameter;
