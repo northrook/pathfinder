@@ -4,26 +4,15 @@ declare(strict_types=1);
 
 namespace Core;
 
-use Cache\LocalStorage;
-use Core\Symfony\DependencyInjection\Autodiscover;
 use Stringable;
-use Support\Normalize;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
+use Cache\LocalStorage;
 
-#[Autodiscover(
-    tag      : ['monolog.logger' => ['channel' => 'pathfinder']],
-    lazy     : false,
-    public   : false,
-    shared   : true,
-    autowire : true,
-)]
 final readonly class PathfinderCache
 {
     private LocalStorage $storage;
 
     public function __construct(
-        #[Autowire( param : 'path.pathfinder_cache' )]
         string $storagePath,
         bool   $validate = true,
         bool   $autosave = false,
@@ -97,7 +86,7 @@ final readonly class PathfinderCache
             if ( ! \is_string( $parameterValue ) ) {
                 continue;
             }
-            $precompiled[$parameterKey] = Normalize::path( $parameterValue );
+            $precompiled[$parameterKey] = Pathfinder::normalize( $parameterValue );
         }
 
         return $precompiled;

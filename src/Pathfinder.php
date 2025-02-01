@@ -9,13 +9,9 @@ use Northrook\Clerk;
 use Support\FileInfo;
 use Support\Interface\ActionInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
-use Core\Symfony\DependencyInjection\Autodiscover;
 use Stringable, LengthException, InvalidArgumentException;
 use function Support\isPath;
 
-#[Autodiscover(
-    tag : ['monolog.logger' => ['channel' => 'pathfinder']],
-)]
 final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 {
     /**
@@ -59,11 +55,6 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         $path = $this->get( $path, $relativeTo );
 
         return $path ? new FileInfo( $path ) : null;
-    }
-
-    private function cacheKey( null|string|bool|int|Stringable ...$from ) : string
-    {
-        return \hash( 'xxh3', \implode( '', $from ) );
     }
 
     /**
@@ -119,17 +110,11 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     public function getParameter( string $key ) : ?string
     {
         \assert(
-            (
-                \ctype_alnum( \str_replace( ['.', '-', '_'], '', $key ) )
-                    && \str_contains( $key, '.' )
-                    && ! \str_starts_with( $key, '.' )
-                    && ! \str_ends_with( $key, '.' )
-            ),
+            $this::validKey( $key ),
             'Invalid parameter \''.$key.'\'. Must contain one period, cannot start or end with period.',
         );
 
         $cacheKey = $this->cacheKey( $key );
-
         // Return cached parameter if found
         if ( $cached = $this->cache?->get( $cacheKey ) ) {
             return $cached;
@@ -141,7 +126,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             $parameter = $this->parameterBag->get( $key );
         }
 
-        // Handle
+        // Handle value errors
         if ( ! $parameter || ! \is_string( $parameter ) ) {
             $value = \is_string( $parameter )
                     ? 'empty string'
@@ -152,6 +137,11 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
                 ['value' => $value, 'key' => $key],
             );
             return null;
+        }
+
+        // Check potential nested parameterKeys
+        if ( \str_contains( $parameter, '%' ) ) {
+            $parameter = $this->resolveNestedParameters( $parameter );
         }
 
         $parameter = $this::normalize( $parameter );
@@ -185,6 +175,33 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     public function hasParameter( string $key ) : bool
     {
         return \array_key_exists( $key, $this->parameters ) || $this->parameterBag?->has( $key );
+    }
+
+    final protected function resolveNestedParameters( string $parameter ) : string
+    {
+        if ( \substr_count( $parameter, '%' ) <= 1 ) {
+            return $parameter;
+        }
+
+        return (string) \preg_replace_callback(
+            '/%([a-zA-Z0-9._-]+)%/',
+            function( $match ) use ( $parameter ) : string {
+                $resolve = $this->getParameter( $match[1] );
+
+                if ( ! $resolve ) {
+                    $this->logger?->warning(
+                        'Unable to resolve parameter {key} in {parameter}.',
+                        [
+                            'key'       => $match[1],
+                            'parameter' => $parameter,
+                        ],
+                    );
+                }
+
+                return $resolve ?? $match[0];
+            },
+            $parameter,
+        );
     }
 
     final protected function resolvePath( string $path, ?string $relativeTo = null ) : ?string
@@ -310,6 +327,27 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         }
 
         return $path;
+    }
+
+    public static function validKey( string $key ) : bool
+    {
+        // Keys must have at least one delimiter
+        if ( ! \str_contains( $key, '.' ) ) {
+            return false;
+        }
+
+        /** Only {@see self::KEY_CHARACTERS} and {@see self::KEY_SEPARATORS} allowed */
+        if ( ! \ctype_alpha( \str_replace( ['.', '-', '_'], '', $key ) ) ) {
+            return false;
+        }
+
+        // Keys cannot start or end with the delimiter
+        return ! ( \str_starts_with( $key, '.' ) || \str_ends_with( $key, '.' ) );
+    }
+
+    private function cacheKey( null|string|bool|int|Stringable ...$from ) : string
+    {
+        return \hash( 'xxh3', \implode( '', $from ) );
     }
 
     /**
