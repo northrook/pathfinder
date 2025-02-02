@@ -20,7 +20,8 @@
     "php": ">=8.2",
     "ext-zend-opcache": "*",
     "northrook/support": "dev-main",
-    "northrook/core-symfony": "dev-main"
+    "northrook/core-symfony": "dev-main",
+    "northrook/core": "dev-main"
   },
   "require-dev": {
     "symfony/dependency-injection": "@stable",

@@ -4,30 +4,42 @@ declare(strict_types=1);
 
 namespace Core;
 
+use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerInterface;
+use Core\Interface\{ActionInterface, PathfinderInterface, StorageInterface};
 use Northrook\Clerk;
 use Support\FileInfo;
-use Support\Interface\ActionInterface;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Symfony\Component\Cache\Psr16Cache;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Stringable, LengthException, InvalidArgumentException;
 use function Support\isPath;
 
 final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 {
+    private StorageInterface|Psr16Cache $cache;
+
     /**
-     * @param array<string, string>      $parameters   [placeholder]
-     * @param null|ParameterBagInterface $parameterBag
-     * @param null|PathfinderCache       $cache
-     * @param null|LoggerInterface       $logger
-     * @param bool                       $debug
+     * @param array<string, string>                        $parameters   [placeholder]
+     * @param null|ParameterBagInterface                   $parameterBag
+     * @param null|CacheItemPoolInterface|StorageInterface $cache
+     * @param null|LoggerInterface                         $logger
+     * @param bool                                         $debug
      */
     public function __construct(
-        private array                  $parameters = [],
-        private ?ParameterBagInterface $parameterBag = null,
-        private ?PathfinderCache       $cache = null,
-        private ?LoggerInterface       $logger = null,
-        private bool                   $debug = false,
-    ) {}
+        private array                                $parameters = [],
+        private ?ParameterBagInterface               $parameterBag = null,
+        null|StorageInterface|CacheItemPoolInterface $cache = null,
+        private ?LoggerInterface                     $logger = null,
+        private bool                                 $debug = false,
+    ) {
+        if ( $cache instanceof StorageInterface ) {
+            $this->cache = $cache;
+        }
+        else {
+            $this->cache = new Psr16Cache( $cache ?? new ArrayAdapter() );
+        }
+    }
 
     /**
      * @param string|Stringable $path
@@ -73,18 +85,39 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
         $key = $this->cacheKey( $path.$relativeTo );
 
-        $resolvedPath = $this->cache?->get( $key );
-
+        try {
+            $resolvedPath = $this->cache->get( $key );
+        }
+        catch ( \Psr\Cache\InvalidArgumentException $exception ) {
+            $this->logger?->error(
+                'Unable to resolve parameter {key}.',
+                [
+                    'key'       => $key,
+                    'exception' => $exception,
+                ],
+            );
+        }
         $resolvedPath ??= $this->resolvePath( (string) $path, $relativeTo );
 
-        if ( ! $resolvedPath ) {
-            $this->logger?->warning( 'Unable to resolve path "'.$path.'".' );
+        try {
+            if ( ! \is_string( $resolvedPath ) ) {
+                $this->logger?->warning( 'Unable to resolve path "'.$path.'".' );
+            }
+            elseif ( \file_exists( $resolvedPath ) || $relativeTo ) {
+                $this->cache->set( $key, $resolvedPath );
+            }
+            else {
+                $this->cache->delete( $key );
+            }
         }
-        elseif ( \file_exists( $resolvedPath ) || $relativeTo ) {
-            $this->cache?->set( $key, $resolvedPath );
-        }
-        else {
-            $this->cache?->delete( $key );
+        catch ( \Psr\Cache\InvalidArgumentException $exception ) {
+            $this->logger?->error(
+                'Unable to resolve parameter {key}.',
+                [
+                    'key'       => $key,
+                    'exception' => $exception,
+                ],
+            );
         }
 
         if ( $this->debug ) {
@@ -116,8 +149,19 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
         $cacheKey = $this->cacheKey( $key );
         // Return cached parameter if found
-        if ( $cached = $this->cache?->get( $cacheKey ) ) {
-            return $cached;
+        try {
+            if ( $cached = $this->cache->get( $cacheKey ) ) {
+                return $cached;
+            }
+        }
+        catch ( \Psr\Cache\InvalidArgumentException $exception ) {
+            $this->logger?->error(
+                'Unable to resolve parameter {key}.',
+                [
+                    'key'       => $key,
+                    'exception' => $exception,
+                ],
+            );
         }
 
         $parameter = $this->parameters[$key] ?? null;
@@ -154,12 +198,23 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         $exists = \file_exists( $parameter );
 
         if ( $exists ) {
-            $this->cache?->set( $cacheKey, $parameter );
+            try {
+                $this->cache->set( $cacheKey, $parameter );
+            }
+            catch ( \Psr\Cache\InvalidArgumentException $exception ) {
+                $this->logger?->error(
+                    'Unable to resolve parameter {key}.',
+                    [
+                        'key'       => $key,
+                        'exception' => $exception,
+                    ],
+                );
+            }
         }
         else {
             $this->logger?->info(
                 'Pathfinder: Exists {exists} - {value} from {key}.',
-                ['exists' => $exists, 'value' => $parameter, 'key' => $key],
+                ['exists' => 'false', 'value' => $parameter, 'key' => $key],
             );
         }
 
@@ -250,8 +305,19 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         $cacheKey = $this->cacheKey( $string );
 
         // Return cached parameter if found
-        if ( $cached = $this->cache?->get( $cacheKey ) ) {
-            return $cached;
+        try {
+            if ( $cached = $this->cache->get( $cacheKey ) ) {
+                return $cached;
+            }
+        }
+        catch ( \Psr\Cache\InvalidArgumentException $exception ) {
+            $this->logger?->error(
+                'Unable to resolve parameter {key}.',
+                [
+                    'key'       => $string,
+                    'exception' => $exception,
+                ],
+            );
         }
 
         // Check for $parameterKey
@@ -269,7 +335,18 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         }
 
         if ( $exists = \file_exists( $path ) ) {
-            $this->cache?->set( $cacheKey, $path );
+            try {
+                $this->cache->set( $cacheKey, $path );
+            }
+            catch ( \Psr\Cache\InvalidArgumentException $exception ) {
+                $this->logger?->error(
+                    'Unable to resolve parameter {key}.',
+                    [
+                        'key'       => $cacheKey,
+                        'exception' => $exception,
+                    ],
+                );
+            }
         }
 
         if ( ! $exists && $this->debug ) {
@@ -330,6 +407,11 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         return $path;
     }
 
+    /**
+     * @param string $key
+     *
+     * @return bool
+     */
     public static function validKey( string $key ) : bool
     {
         // Keys must have at least one delimiter
@@ -337,7 +419,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             return false;
         }
 
-        /** Only {@see self::KEY_CHARACTERS} and {@see self::KEY_SEPARATORS} allowed */
+        /** Only `[a-zA-Z.-_]` allowed */
         if ( ! \ctype_alpha( \str_replace( ['.', '-', '_'], '', $key ) ) ) {
             return false;
         }

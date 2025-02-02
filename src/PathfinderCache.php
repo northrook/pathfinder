@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Core;
 
+use Core\Interface\StorageInterface;
+use JetBrains\PhpStorm\Deprecated;
 use Stringable;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Cache\LocalStorage;
 
+#[Deprecated]
 final readonly class PathfinderCache
 {
-    private LocalStorage $storage;
+    private StorageInterface $storage;
 
     public function __construct(
         string $storagePath,
@@ -44,14 +47,14 @@ final readonly class PathfinderCache
         $this->storage->set( $key, $value );
     }
 
-    public function delete( string $key ) : void
+    public function delete( string $key ) : bool
     {
-        $this->storage->delete( $key );
+        return $this->storage->delete( $key );
     }
 
     public function commit() : void
     {
-        $this->storage->save();
+        $this->storage->commit();
     }
 
     public static function key( null|string|bool|int|Stringable ...$from ) : string
