@@ -4,6 +4,8 @@
 *.code-workspace
 
 ### Dev
+/src/PathfinderCache.php
+/var
 /vendor
 /node_modules
 /*.cache
@@ -11,9 +13,3 @@
 /*.css
 /*.php
 /package-lock.json
-
-### Symfony
-/var
-/public/cache
-/public/build
-.env

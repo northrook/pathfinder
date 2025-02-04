@@ -11,23 +11,23 @@
   ],
   "autoload": {
     "psr-4": {
-      "Core\\": "src/"
+      "Core\\": "src"
     }
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
   "require": {
-    "php": ">=8.2",
-    "ext-zend-opcache": "*",
-    "northrook/support": "dev-main",
-    "northrook/core-symfony": "dev-main",
-    "northrook/core": "dev-main"
-  },
-  "require-dev": {
-    "symfony/dependency-injection": "@stable",
-    "northrook/dev-env": "dev-main"
+    "php": ">=8.3",
+    "northrook/core": "dev-main",
+    "northrook/support": "dev-main"
   },
   "scripts": {
     "phpstan": "vendor/bin/phpstan analyse"
+  },
+  "require-dev": {
+    "northrook/php-cs": "dev-main",
+    "symfony/cache-contracts": "^3.5",
+    "symfony/dependency-injection": "^7.2",
+    "symfony/cache": "^7.2"
   }
 }

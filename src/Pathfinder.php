@@ -6,14 +6,11 @@ namespace Core;
 
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerInterface;
-use Core\Interface\{ActionInterface, PathfinderInterface, StorageInterface};
-use Northrook\Clerk;
 use Support\FileInfo;
-use Symfony\Component\Cache\Adapter\ArrayAdapter;
-use Symfony\Component\Cache\Psr16Cache;
+use Core\Interface\{ActionInterface, PathfinderInterface, StorageInterface};
+use Symfony\Component\Cache\{Psr16Cache, Adapter\ArrayAdapter};
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
-use Stringable, LengthException, InvalidArgumentException;
-use function Support\isPath;
+use Stringable, Throwable, LengthException, InvalidArgumentException;
 
 final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 {
@@ -24,14 +21,12 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      * @param null|ParameterBagInterface                   $parameterBag
      * @param null|CacheItemPoolInterface|StorageInterface $cache
      * @param null|LoggerInterface                         $logger
-     * @param bool                                         $debug
      */
     public function __construct(
         private array                                $parameters = [],
         private ?ParameterBagInterface               $parameterBag = null,
         null|StorageInterface|CacheItemPoolInterface $cache = null,
         private ?LoggerInterface                     $logger = null,
-        private bool                                 $debug = false,
     ) {
         if ( $cache instanceof StorageInterface ) {
             $this->cache = $cache;
@@ -79,16 +74,12 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         string|Stringable $path,
         ?string           $relativeTo = null,
     ) : ?string {
-        if ( $this->debug ) {
-            Clerk::event( __METHOD__, $this::class );
-        }
-
         $key = $this->cacheKey( $path.$relativeTo );
 
         try {
             $resolvedPath = $this->cache->get( $key );
         }
-        catch ( \Psr\Cache\InvalidArgumentException $exception ) {
+        catch ( Throwable $exception ) {
             $this->logger?->error(
                 'Unable to resolve parameter {key}.',
                 [
@@ -110,7 +101,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
                 $this->cache->delete( $key );
             }
         }
-        catch ( \Psr\Cache\InvalidArgumentException $exception ) {
+        catch ( Throwable $exception ) {
             $this->logger?->error(
                 'Unable to resolve parameter {key}.',
                 [
@@ -118,10 +109,6 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
                     'exception' => $exception,
                 ],
             );
-        }
-
-        if ( $this->debug ) {
-            Clerk::stop( __METHOD__ );
         }
 
         return $resolvedPath;
@@ -154,7 +141,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
                 return $cached;
             }
         }
-        catch ( \Psr\Cache\InvalidArgumentException $exception ) {
+        catch ( Throwable $exception ) {
             $this->logger?->error(
                 'Unable to resolve parameter {key}.',
                 [
@@ -190,7 +177,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
         $parameter = $this::normalize( $parameter );
 
-        if ( ! isPath( $parameter ) ) {
+        if ( ! $this->maybePath( $parameter ) ) {
             $this->logger?->warning( 'The value for {key}, is not path-like.', ['key' => $key] );
             return null;
         }
@@ -201,7 +188,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             try {
                 $this->cache->set( $cacheKey, $parameter );
             }
-            catch ( \Psr\Cache\InvalidArgumentException $exception ) {
+            catch ( Throwable $exception ) {
                 $this->logger?->error(
                     'Unable to resolve parameter {key}.',
                     [
@@ -233,7 +220,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         return \array_key_exists( $key, $this->parameters ) || $this->parameterBag?->has( $key );
     }
 
-    final protected function resolveNestedParameters( string $parameter ) : string
+    protected function resolveNestedParameters( string $parameter ) : string
     {
         if ( \substr_count( $parameter, '%' ) <= 1 ) {
             return $parameter;
@@ -260,7 +247,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         );
     }
 
-    final protected function resolvePath( string $path, ?string $relativeTo = null ) : ?string
+    protected function resolvePath( string $path, ?string $relativeTo = null ) : ?string
     {
         // Resolve potential relative path first
         if ( $relativeTo ) {
@@ -300,7 +287,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         return $path;
     }
 
-    final protected function resolveParameter( string $string ) : ?string
+    protected function resolveParameter( string $string ) : ?string
     {
         $cacheKey = $this->cacheKey( $string );
 
@@ -310,7 +297,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
                 return $cached;
             }
         }
-        catch ( \Psr\Cache\InvalidArgumentException $exception ) {
+        catch ( Throwable $exception ) {
             $this->logger?->error(
                 'Unable to resolve parameter {key}.',
                 [
@@ -338,7 +325,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             try {
                 $this->cache->set( $cacheKey, $path );
             }
-            catch ( \Psr\Cache\InvalidArgumentException $exception ) {
+            catch ( Throwable $exception ) {
                 $this->logger?->error(
                     'Unable to resolve parameter {key}.',
                     [
@@ -349,7 +336,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
             }
         }
 
-        if ( ! $exists && $this->debug ) {
+        if ( ! $exists ) {
             $this->logger?->error(
                 'Pathfinder: Unable to resolve {parameterKey}, the parameter does not provide a valid path.',
                 ['parameterKey' => $parameterKey],
@@ -379,7 +366,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         // Normalize separators
         $nroamlized = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $path );
 
-        $isRelative = DIRECTORY_SEPARATOR === $nroamlized[0];
+        $isRelative = $nroamlized[0] === DIRECTORY_SEPARATOR;
 
         // Implode->Explode for separator deduplication
         $exploded = \explode( DIRECTORY_SEPARATOR, \implode( DIRECTORY_SEPARATOR, $nroamlized ) );
@@ -459,5 +446,43 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         }
 
         return [$parameterKey, \strchr( $string, DIRECTORY_SEPARATOR ) ?: ''];
+    }
+
+    /**
+     * Checks if a given value has a `path` structure.
+     *
+     * ⚠️ Does **NOT** validate the `path` in any capacity!
+     *
+     * @param null|string|Stringable $value
+     * @param string                 $contains [..] optional `str_contains` check
+     *
+     * @return bool
+     */
+    private function maybePath( null|string|Stringable $value, string $contains = '..' ) : bool
+    {
+        // Stringify scalars and Stringable objects
+        $string = \trim( (string) $value );
+
+        // Must be at least two characters long to be a path string
+        if ( ! $string || \strlen( $string ) < 2 ) {
+            return false;
+        }
+
+        // One or more slashes indicate this could be a path string
+        if ( \str_contains( $string, '/' ) || \str_contains( $string, '\\' ) ) {
+            return true;
+        }
+
+        // Any periods that aren't in the first 3 characters indicate this could be a `path/file.ext`
+        if ( \strrpos( $string, '.' ) > 2 ) {
+            return true;
+        }
+
+        // Indicates this could be a `.hidden` path
+        if ( $string[0] === '.' && \ctype_alpha( $string[1] ) ) {
+            return true;
+        }
+
+        return \str_contains( $string, $contains );
     }
 }
