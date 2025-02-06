@@ -18,8 +18,8 @@
   "prefer-stable": true,
   "require": {
     "php": ">=8.3",
-    "northrook/core": "dev-main",
-    "northrook/support": "dev-main"
+    "ext-curl": "*",
+    "northrook/core": "dev-main"
   },
   "scripts": {
     "phpstan": "vendor/bin/phpstan analyse"
@@ -28,6 +28,8 @@
     "northrook/php-cs": "dev-main",
     "symfony/cache-contracts": "^3.5",
     "symfony/dependency-injection": "^7.2",
-    "symfony/cache": "^7.2"
+    "symfony/cache": "^7.2",
+    "symfony/error-handler": "^7.2",
+    "symfony/filesystem": "^7.2"
   }
 }

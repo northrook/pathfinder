@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Core;
 
+use Core\Pathfinder\Path;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerInterface;
-use Support\FileInfo;
 use Core\Interface\{ActionInterface, PathfinderInterface, StorageInterface};
 use Symfony\Component\Cache\{Psr16Cache, Adapter\ArrayAdapter};
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
-use Stringable, Throwable, LengthException, InvalidArgumentException;
+use LengthException;
+use Stringable, Throwable, InvalidArgumentException;
+
+\class_exists( Path::class );
 
 final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 {
@@ -53,15 +56,15 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      * @param string|Stringable $path
      * @param null|string       $relativeTo
      *
-     * @return ?FileInfo
+     * @return ?Path
      */
-    public function getFileInfo(
+    public function getPath(
         string|Stringable $path,
         ?string           $relativeTo = null,
-    ) : ?FileInfo {
+    ) : ?Path {
         $path = $this->get( $path, $relativeTo );
 
-        return $path ? new FileInfo( $path ) : null;
+        return $path ? new Path( $path ) : null;
     }
 
     /**
@@ -177,7 +180,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
         $parameter = $this::normalize( $parameter );
 
-        if ( ! $this->maybePath( $parameter ) ) {
+        if ( ! $this::isPath( $parameter ) ) {
             $this->logger?->warning( 'The value for {key}, is not path-like.', ['key' => $key] );
             return null;
         }
@@ -347,54 +350,6 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     }
 
     /**
-     * # Normalise a `string` or `string[]`, assuming it is a `path`.
-     *
-     * - If an array of strings is passed, they will be joined using the directory separator.
-     * - Normalises slashes to system separator.
-     * - Removes repeated separators.
-     * - Will throw a {@see ValueError} if the resulting string exceeds {@see PHP_MAXPATHLEN}.
-     *
-     * ```
-     * normalizePath( './assets\\\/scripts///example.js' );
-     * // => '.\assets\scripts\example.js'
-     * ```
-     *
-     * @param string ...$path
-     */
-    public static function normalize( string ...$path ) : string
-    {
-        // Normalize separators
-        $nroamlized = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $path );
-
-        $isRelative = $nroamlized[0] === DIRECTORY_SEPARATOR;
-
-        // Implode->Explode for separator deduplication
-        $exploded = \explode( DIRECTORY_SEPARATOR, \implode( DIRECTORY_SEPARATOR, $nroamlized ) );
-
-        // Ensure each part does not start or end with illegal characters
-        $exploded = \array_map( static fn( $item ) => \trim( $item, " \n\r\t\v\0\\/" ), $exploded );
-
-        // Filter the exploded path, and implode using the directory separator
-        $path = \implode( DIRECTORY_SEPARATOR, \array_filter( $exploded ) );
-
-        if ( ( $length = \mb_strlen( $path ) ) > ( $limit = PHP_MAXPATHLEN - 2 ) ) {
-            $method  = __METHOD__;
-            $length  = (string) $length;
-            $limit   = (string) $limit;
-            $message = "{$method} resulted in a string of {$length}, exceeding the {$limit} character limit.";
-            $result  = 'Operation was halted to prevent overflow.';
-            throw new LengthException( $message.PHP_EOL.$result );
-        }
-
-        // Preserve intended relative paths
-        if ( $isRelative ) {
-            $path = DIRECTORY_SEPARATOR.$path;
-        }
-
-        return $path;
-    }
-
-    /**
      * @param string $key
      *
      * @return bool
@@ -449,18 +404,58 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     }
 
     /**
+     * Checks if a given value has a `URL` structure.
+     *
+     * ⚠️ Does **NOT** validate the URL in any capacity!
+     *
+     * @param string|Stringable $value
+     * @param ?string           $requiredProtocol
+     *
+     * @return bool
+     */
+    public static function isUrl( string|Stringable $value, ?string $requiredProtocol = null ) : bool
+    {
+        // Stringify
+        $string = \trim( (string) $value );
+
+        // Can not be an empty string
+        if ( ! $string ) {
+            return false;
+        }
+
+        // Must not start with a number
+        if ( \is_numeric( $string[0] ) ) {
+            return false;
+        }
+
+        /**
+         * Does the string resemble a URL-like structure?
+         *
+         * Ensures the string starts with a schema-like substring, and has a real-ish domain extension.
+         *
+         * - Will gladly accept bogus strings like `not-a-schema://d0m@!n.tld/`
+         */
+        if ( ! \preg_match( '#^([\w\-+]*?[:/]{2}).+\.[a-z0-9]{2,}#m', $string ) ) {
+            return false;
+        }
+
+        // Check for required protocol if requested
+        return ! ( $requiredProtocol && ! \str_starts_with( $string, \rtrim( $requiredProtocol, ':/' ).'://' ) );
+    }
+
+    /**
      * Checks if a given value has a `path` structure.
      *
      * ⚠️ Does **NOT** validate the `path` in any capacity!
      *
-     * @param null|string|Stringable $value
-     * @param string                 $contains [..] optional `str_contains` check
+     * @param string|Stringable $value
+     * @param string            $contains [..] optional `str_contains` check
      *
      * @return bool
      */
-    private function maybePath( null|string|Stringable $value, string $contains = '..' ) : bool
+    public static function isPath( string|Stringable $value, string $contains = '..' ) : bool
     {
-        // Stringify scalars and Stringable objects
+        // Stringify
         $string = \trim( (string) $value );
 
         // Must be at least two characters long to be a path string
@@ -484,5 +479,53 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         }
 
         return \str_contains( $string, $contains );
+    }
+
+    /**
+     * # Normalise a `string` or `string[]`, assuming it is a `path`.
+     *
+     * - If an array of strings is passed, they will be joined using the directory separator.
+     * - Normalises slashes to system separator.
+     * - Removes repeated separators.
+     * - Will throw a {@see ValueError} if the resulting string exceeds {@see PHP_MAXPATHLEN}.
+     *
+     * ```
+     * normalizePath( './assets\\\/scripts///example.js' );
+     * // => '.\assets\scripts\example.js'
+     * ```
+     *
+     * @param string ...$path
+     */
+    public static function normalize( string ...$path ) : string
+    {
+        // Normalize separators
+        $nroamlized = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $path );
+
+        $isRelative = $nroamlized[0] === DIRECTORY_SEPARATOR;
+
+        // Implode->Explode for separator deduplication
+        $exploded = \explode( DIRECTORY_SEPARATOR, \implode( DIRECTORY_SEPARATOR, $nroamlized ) );
+
+        // Ensure each part does not start or end with illegal characters
+        $exploded = \array_map( static fn( $item ) => \trim( $item, " \n\r\t\v\0\\/" ), $exploded );
+
+        // Filter the exploded path, and implode using the directory separator
+        $path = \implode( DIRECTORY_SEPARATOR, \array_filter( $exploded ) );
+
+        if ( ( $length = \mb_strlen( $path ) ) > ( $limit = PHP_MAXPATHLEN - 2 ) ) {
+            $method  = __METHOD__;
+            $length  = (string) $length;
+            $limit   = (string) $limit;
+            $message = "{$method} resulted in a string of {$length}, exceeding the {$limit} character limit.";
+            $result  = 'Operation was halted to prevent overflow.';
+            throw new LengthException( $message.PHP_EOL.$result );
+        }
+
+        // Preserve intended relative paths
+        if ( $isRelative ) {
+            $path = DIRECTORY_SEPARATOR.$path;
+        }
+
+        return $path;
     }
 }
