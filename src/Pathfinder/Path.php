@@ -191,6 +191,23 @@ class Path implements Stringable
         return $this->fileInfo->isReadable();
     }
 
+    /**
+     * @param bool $falseOnError
+     *
+     * @return ($falseOnError is true ? false|string : string)
+     */
+    public function getRealPath( bool $falseOnError = false ) : false|string
+    {
+        if ( $falseOnError ) {
+            return $this->fileInfo->getRealPath();
+        }
+
+        return $this->fileInfo->getRealPath()
+                ?: throw new RuntimeException(
+                    __METHOD__." returned false for path: {$this->getPathname()}",
+                );
+    }
+
     public function getPathname() : string
     {
         return $this->fileInfo->getPathname();
@@ -205,6 +222,7 @@ class Path implements Stringable
     {
         return \strrchr( $this->fileInfo->getFilename(), '.', true ) ?: $this->fileInfo->getFilename();
     }
+
 
     final public function getContents( bool $throwOnError = false ) : ?string
     {
