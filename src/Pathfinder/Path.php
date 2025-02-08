@@ -191,6 +191,16 @@ class Path implements Stringable
         return $this->fileInfo->isReadable();
     }
 
+    final public function SplFileInfo() : SplFileInfo
+    {
+        return $this->fileInfo;
+    }
+
+    final public function getExtension() : string
+    {
+        return $this->fileInfo->getExtension();
+    }
+
     /**
      * @param bool $falseOnError
      *
@@ -213,6 +223,12 @@ class Path implements Stringable
         return $this->fileInfo->getPathname();
     }
 
+
+    public function getPath() : string
+    {
+        return $this->fileInfo->getPath();
+    }
+
     /**
      * Returns the `filename` without the extension.
      *
@@ -222,7 +238,6 @@ class Path implements Stringable
     {
         return \strrchr( $this->fileInfo->getFilename(), '.', true ) ?: $this->fileInfo->getFilename();
     }
-
 
     final public function getContents( bool $throwOnError = false ) : ?string
     {
