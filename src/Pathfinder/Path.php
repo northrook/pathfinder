@@ -210,17 +210,13 @@ class Path implements Stringable
             return $this->fileInfo->getRealPath();
         }
 
-        return $this->fileInfo->getRealPath()
-                ?: throw new RuntimeException(
-                    __METHOD__." returned false for path: {$this->getPathname()}",
-                );
+        return $this->fileInfo->getRealPath() ?: $this->fileInfo->getPathname();
     }
 
     public function getPathname() : string
     {
         return $this->fileInfo->getPathname();
     }
-
 
     public function getPath() : string
     {
@@ -283,9 +279,14 @@ class Path implements Stringable
         return \array_map( self::from( ... ), $glob );
     }
 
+    /**
+     * Returns {@see realpath} if cached.
+     *
+     * @return string
+     */
     public function __toString() : string
     {
-        return $this->fileInfo->getPathname();
+        return $this->getRealPath();
     }
 
     final protected function setFileInfo( Stringable|string $path ) : void
