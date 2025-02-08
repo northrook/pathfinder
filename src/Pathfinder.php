@@ -13,8 +13,6 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use LengthException;
 use Stringable, Throwable, InvalidArgumentException;
 
-\class_exists( Path::class );
-
 final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 {
     private StorageInterface|Psr16Cache $cache;

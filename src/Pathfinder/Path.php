@@ -14,8 +14,6 @@ use RuntimeException;
 use BadMethodCallException;
 use const LOCK_EX;
 
-\class_exists( Pathfinder::class );
-
 class Path implements Stringable
 {
     protected SplFileInfo $fileInfo;
