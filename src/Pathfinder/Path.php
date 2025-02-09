@@ -103,9 +103,7 @@ class Path implements Stringable
     }
 
     /**
-     * Remove {@see self}.
-     *
-     * @return bool
+     * Remove the file or directory located at {@see self::$fileInfo}.
      */
     final public function remove() : void
     {
