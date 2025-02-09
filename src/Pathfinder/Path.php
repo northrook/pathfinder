@@ -107,10 +107,11 @@ class Path implements Stringable
      *
      * @return bool
      */
-    final public function remove() : bool
+    final public function remove() : void
     {
         if ( \class_exists( Filesystem::class ) ) {
             ( new Filesystem() )->remove( $this->fileInfo->getPathname() );
+            return;
         }
 
         throw new BadMethodCallException( __METHOD__." requires the 'symfony/filesystem' package." );
