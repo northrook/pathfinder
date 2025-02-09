@@ -41,12 +41,12 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      * @param string|Stringable $path
      * @param null|string       $relativeTo
      *
-     * @return ?string
+     * @return string
      */
     public function __invoke(
         string|Stringable $path,
         ?string           $relativeTo = null,
-    ) : ?string {
+    ) : string {
         return $this->get( $path, $relativeTo );
     }
 
@@ -54,27 +54,27 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      * @param string|Stringable $path
      * @param null|string       $relativeTo
      *
-     * @return ?Path
+     * @return Path
      */
     public function getPath(
         string|Stringable $path,
         ?string           $relativeTo = null,
-    ) : ?Path {
+    ) : Path {
         $path = $this->get( $path, $relativeTo );
 
-        return $path ? new Path( $path ) : null;
+        return new Path( $path );
     }
 
     /**
      * @param string|Stringable $path
      * @param null|string       $relativeTo
      *
-     * @return ?string
+     * @return string
      */
     public function get(
         string|Stringable $path,
         ?string           $relativeTo = null,
-    ) : ?string {
+    ) : string {
         $key = $this->cacheKey( $path.$relativeTo );
 
         try {
