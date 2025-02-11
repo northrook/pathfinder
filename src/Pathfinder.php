@@ -89,7 +89,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
                 ],
             );
         }
-        $resolvedPath ??= $this->resolvePath( (string) $path, $relativeTo );
+        $resolvedPath ??= $this->resolvePath( (string) $path, (string) $relativeTo );
 
         try {
             if ( ! \is_string( $resolvedPath ) ) {
@@ -500,12 +500,12 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
     public static function normalize( string ...$path ) : string
     {
         // Normalize separators
-        $nroamlized = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $path );
+        $normalized = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $path );
 
-        $isRelative = $nroamlized[0] === DIRECTORY_SEPARATOR;
+        $isRelative = $normalized[0][0] === DIRECTORY_SEPARATOR;
 
         // Implode->Explode for separator deduplication
-        $exploded = \explode( DIRECTORY_SEPARATOR, \implode( DIRECTORY_SEPARATOR, $nroamlized ) );
+        $exploded = \explode( DIRECTORY_SEPARATOR, \implode( DIRECTORY_SEPARATOR, $normalized ) );
 
         // Ensure each part does not start or end with illegal characters
         $exploded = \array_map( static fn( $item ) => \trim( $item, " \n\r\t\v\0\\/" ), $exploded );

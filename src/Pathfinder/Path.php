@@ -156,6 +156,16 @@ class Path implements Stringable
         return Pathfinder::isUrl( $this->fileInfo->getPathname(), $protocol );
     }
 
+    final public function isRelative( bool $traversible = false ) : bool
+    {
+        return \str_starts_with(
+            $this->fileInfo->getPathname(),
+            $traversible
+                        ? '..'.DIRECTORY_SEPARATOR
+                        : DIRECTORY_SEPARATOR,
+        );
+    }
+
     final public function isReadable() : bool
     {
         if ( $this->isUrl() ) {
