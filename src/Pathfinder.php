@@ -346,7 +346,6 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
                 ],
             );
         }
-
         return $path;
     }
 
@@ -389,7 +388,11 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         $string = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $string );
 
         // We are only concerned with the first segment
-        $parameterKey = \strstr( $string, DIRECTORY_SEPARATOR, true ) ?: $string;
+        $parameterKey = \strstr( $string, DIRECTORY_SEPARATOR, true );
+
+        if ( $parameterKey === false ) {
+            $parameterKey = $string;
+        }
 
         // At least one separator must be present
         if ( ! $parameterKey || ! \str_contains( $parameterKey, '.' ) ) {
