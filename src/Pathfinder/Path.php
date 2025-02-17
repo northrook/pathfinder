@@ -215,11 +215,17 @@ class Path implements Stringable
      */
     public function getRealPath( bool $falseOnError = false ) : false|string
     {
+        $path = $this->fileInfo->getRealPath();
+
         if ( $falseOnError ) {
-            return $this->fileInfo->getRealPath();
+            return $path;
         }
 
-        return $this->fileInfo->getRealPath() ?: $this->fileInfo->getPathname();
+        if ( $path ) {
+            return $path;
+        }
+
+        return $this->fileInfo->getPathname();
     }
 
     public function getPathname() : string
