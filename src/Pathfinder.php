@@ -4,20 +4,19 @@ declare(strict_types=1);
 
 namespace Core;
 
+use Cache\LocalCacheTrait;
 use Core\Pathfinder\Path;
+use Core\Interface\ActionInterface;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerInterface;
-use Core\Interface\{ActionInterface, PathfinderInterface};
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
+use RuntimeException;
 use Stringable, Throwable, InvalidArgumentException;
 use function Support\{isPath, normalizePath};
 
-final class Pathfinder implements PathfinderInterface, ActionInterface
+final class Pathfinder implements ActionInterface
 {
-    /**
-     * @var array<string, string>|CacheItemPoolInterface
-     */
-    private CacheItemPoolInterface|array $cache;
+    use LocalCacheTrait;
 
     /**
      * @param array<string, string>       $parameters   [placeholder]
@@ -80,17 +79,18 @@ final class Pathfinder implements PathfinderInterface, ActionInterface
         catch ( Throwable $exception ) {
             $this->logger?->error(
                 'Unable to resolve parameter {key}.',
-                [
-                    'key'       => $key,
-                    'exception' => $exception,
-                ],
+                ['key' => $key, 'exception' => $exception],
             );
         }
+
         $resolvedPath ??= $this->resolvePath( (string) $path, (string) $relativeTo );
 
         try {
             if ( ! \is_string( $resolvedPath ) ) {
-                $this->logger?->warning( 'Unable to resolve path "'.$path.'".' );
+                $this->logger?->warning(
+                    'Unable to resolve path from {key}: {path}.',
+                    ['key' => $key, 'path' => $path],
+                );
             }
             elseif ( \file_exists( $resolvedPath ) || $relativeTo ) {
                 $this->setCache( $key, $resolvedPath );
@@ -106,6 +106,11 @@ final class Pathfinder implements PathfinderInterface, ActionInterface
                     'key'       => $key,
                     'exception' => $exception,
                 ],
+            );
+            throw new RuntimeException(
+                "Unable to resolve path from {$key}.",
+                500,
+                $exception,
             );
         }
 
@@ -367,69 +372,69 @@ final class Pathfinder implements PathfinderInterface, ActionInterface
         return ! ( \str_starts_with( $key, '.' ) || \str_ends_with( $key, '.' ) );
     }
 
-    /**
-     * Retrieve a cached value.
-     *
-     * @param string $key
-     *
-     * @return null|string
-     */
-    private function getCache( string $key ) : ?string
-    {
-        if ( \is_array( $this->cache ) ) {
-            return $this->cache[$key] ?? null;
-        }
+    // /**
+    //  * Retrieve a cached value.
+    //  *
+    //  * @param string $key
+    //  *
+    //  * @return null|string
+    //  */
+    // private function getCache( string $key ) : ?string
+    // {
+    //     if ( \is_array( $this->cache ) ) {
+    //         return $this->cache[$key] ?? null;
+    //     }
+    //
+    //     try {
+    //         if ( $this->cache->hasItem( $key ) ) {
+    //             return $this->cache->getItem( $key )->get();
+    //         }
+    //     }
+    //     catch ( Throwable $exception ) {
+    //         $this->logger?->error(
+    //             'getCache: {key}. '.$exception->getMessage(),
+    //             ['key' => $key, 'exception' => $exception],
+    //         );
+    //     }
+    //     return null;
+    // }
 
-        try {
-            if ( $this->cache->hasItem( $key ) ) {
-                return $this->cache->getItem( $key )->get();
-            }
-        }
-        catch ( Throwable $exception ) {
-            $this->logger?->error(
-                'getCache: {key}. '.$exception->getMessage(),
-                ['key' => $key, 'exception' => $exception],
-            );
-        }
-        return null;
-    }
-
-    private function setCache( string $key, string $value ) : void
-    {
-        if ( \is_array( $this->cache ) ) {
-            $this->cache[$key] = $value;
-            return;
-        }
-
-        try {
-            $item = $this->cache->getItem( $key );
-            $item->set( $value );
-        }
-        catch ( Throwable $exception ) {
-            $this->logger?->error(
-                'setCache: {key}. '.$exception->getMessage(),
-                ['key' => $key, 'exception' => $exception],
-            );
-        }
-    }
-
-    private function unsetCache( string $key ) : void
-    {
-        if ( \is_array( $this->cache ) ) {
-            unset( $this->cache[$key] );
-            return;
-        }
-
-        try {
-            $this->cache->deleteItem( $key );
-        }
-        catch ( Throwable $exception ) {
-            $this->logger?->error(
-                'unsetCache: {key}. '.$exception->getMessage(),
-                ['key' => $key, 'exception' => $exception],
-            );
-        }
-    }
+    // private function setCache( string $key, string $value ) : void
+    // {
+    //     if ( \is_array( $this->cache ) ) {
+    //         $this->cache[$key] = $value;
+    //         return;
+    //     }
+    //
+    //     try {
+    //         $item = $this->cache->getItem( $key );
+    //         $item->set( $value );
+    //     }
+    //     catch ( Throwable $exception ) {
+    //         $this->logger?->error(
+    //             'setCache: {key}. '.$exception->getMessage(),
+    //             ['key' => $key, 'exception' => $exception],
+    //         );
+    //     }
+    // }
+    //
+    // private function unsetCache( string $key ) : void
+    // {
+    //     if ( \is_array( $this->cache ) ) {
+    //         unset( $this->cache[$key] );
+    //         return;
+    //     }
+    //
+    //     try {
+    //         $this->cache->deleteItem( $key );
+    //     }
+    //     catch ( Throwable $exception ) {
+    //         $this->logger?->error(
+    //             'unsetCache: {key}. '.$exception->getMessage(),
+    //             ['key' => $key, 'exception' => $exception],
+    //         );
+    //     }
+    // }
 
     private function cacheKey( null|string|bool|int|Stringable ...$from ) : string
     {
