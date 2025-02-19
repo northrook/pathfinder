@@ -4,19 +4,18 @@ declare(strict_types=1);
 
 namespace Core;
 
-use Cache\LocalCacheTrait;
 use Core\Pathfinder\Path;
 use Core\Interface\ActionInterface;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
-use RuntimeException;
-use Stringable, Throwable, InvalidArgumentException;
+use Cache\CachePoolTrait;
+use RuntimeException, Stringable, Throwable, InvalidArgumentException;
 use function Support\{isPath, normalizePath};
 
 final class Pathfinder implements ActionInterface
 {
-    use LocalCacheTrait;
+    use CachePoolTrait;
 
     /**
      * @param array<string, string>       $parameters   [placeholder]
