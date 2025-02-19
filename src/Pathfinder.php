@@ -12,8 +12,13 @@ use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Stringable, Throwable, InvalidArgumentException;
 use function Support\{isPath, normalizePath};
 
-final readonly class Pathfinder implements PathfinderInterface, ActionInterface
+final class Pathfinder implements PathfinderInterface, ActionInterface
 {
+    /**
+     * @var array<string, string>|CacheItemPoolInterface
+     */
+    private CacheItemPoolInterface|array $cache;
+
     /**
      * @param array<string, string>       $parameters   [placeholder]
      * @param null|ParameterBagInterface  $parameterBag
@@ -21,11 +26,13 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
      * @param null|LoggerInterface        $logger
      */
     public function __construct(
-        private array                   $parameters = [],
-        private ?ParameterBagInterface  $parameterBag = null,
-        private ?CacheItemPoolInterface $cache = null,
-        private ?LoggerInterface        $logger = null,
-    ) {}
+        private readonly array                  $parameters = [],
+        private readonly ?ParameterBagInterface $parameterBag = null,
+        ?CacheItemPoolInterface                 $cache = null,
+        private readonly ?LoggerInterface       $logger = null,
+    ) {
+        $this->cache = $cache ?? [];
+    }
 
     /**
      * @param string|Stringable      $path
@@ -68,7 +75,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         $key = $this->cacheKey( $path.$relativeTo );
 
         try {
-            $resolvedPath = $this->getCached( $key );
+            $resolvedPath = $this->getCache( $key );
         }
         catch ( Throwable $exception ) {
             $this->logger?->error(
@@ -89,7 +96,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
                 $this->setCache( $key, $resolvedPath );
             }
             else {
-                $this->cache?->deleteItem( $key );
+                $this->unsetCache( $key );
             }
         }
         catch ( Throwable $exception ) {
@@ -128,7 +135,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         $cacheKey = $this->cacheKey( $key );
         // Return cached parameter if found
         try {
-            if ( $cached = $this->getCached( $cacheKey ) ) {
+            if ( $cached = $this->getCache( $cacheKey ) ) {
                 return $cached;
             }
         }
@@ -284,7 +291,7 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
         // Return cached parameter if found
         try {
-            if ( $cached = $this->getCached( $cacheKey ) ) {
+            if ( $cached = $this->getCache( $cacheKey ) ) {
                 return $cached;
             }
         }
@@ -360,20 +367,28 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
         return ! ( \str_starts_with( $key, '.' ) || \str_ends_with( $key, '.' ) );
     }
 
-    private function getCached( string $key ) : ?string
+    /**
+     * Retrieve a cached value.
+     *
+     * @param string $key
+     *
+     * @return null|string
+     */
+    private function getCache( string $key ) : ?string
     {
+        if ( \is_array( $this->cache ) ) {
+            return $this->cache[$key] ?? null;
+        }
+
         try {
-            if ( $this->cache && $this->cache->hasItem( $key ) ) {
+            if ( $this->cache->hasItem( $key ) ) {
                 return $this->cache->getItem( $key )->get();
             }
         }
         catch ( Throwable $exception ) {
             $this->logger?->error(
-                'Unable to resolve parameter {key}.',
-                [
-                    'key'       => $key,
-                    'exception' => $exception,
-                ],
+                'getCache: {key}. '.$exception->getMessage(),
+                ['key' => $key, 'exception' => $exception],
             );
         }
         return null;
@@ -381,26 +396,37 @@ final readonly class Pathfinder implements PathfinderInterface, ActionInterface
 
     private function setCache( string $key, string $value ) : void
     {
-        if ( ! $this->cache ) {
+        if ( \is_array( $this->cache ) ) {
+            $this->cache[$key] = $value;
             return;
         }
 
         try {
             $item = $this->cache->getItem( $key );
-            // if ( $this->cache->hasItem( $key ) ) {
-            // } else {
-            //     $item = $this->cache->getItem( $key );
-            // }
             $item->set( $value );
-            // dump( $item );
         }
         catch ( Throwable $exception ) {
             $this->logger?->error(
-                'Unable to resolve parameter {key}.',
-                [
-                    'key'       => $key,
-                    'exception' => $exception,
-                ],
+                'setCache: {key}. '.$exception->getMessage(),
+                ['key' => $key, 'exception' => $exception],
+            );
+        }
+    }
+
+    private function unsetCache( string $key ) : void
+    {
+        if ( \is_array( $this->cache ) ) {
+            unset( $this->cache[$key] );
+            return;
+        }
+
+        try {
+            $this->cache->deleteItem( $key );
+        }
+        catch ( Throwable $exception ) {
+            $this->logger?->error(
+                'unsetCache: {key}. '.$exception->getMessage(),
+                ['key' => $key, 'exception' => $exception],
             );
         }
     }
