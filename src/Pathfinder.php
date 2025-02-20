@@ -10,7 +10,7 @@ use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Cache\CachePoolTrait;
-use RuntimeException, Stringable, Throwable, InvalidArgumentException;
+use Stringable, InvalidArgumentException;
 use function Support\{isPath, normalizePath};
 
 final class Pathfinder implements ActionInterface
@@ -72,45 +72,21 @@ final class Pathfinder implements ActionInterface
     ) : string {
         $key = $this->cacheKey( $path.$relativeTo );
 
-        try {
-            $resolvedPath = $this->getCache( $key );
-        }
-        catch ( Throwable $exception ) {
-            $this->logger?->error(
-                'Unable to resolve parameter {key}.',
-                ['key' => $key, 'exception' => $exception],
-            );
-        }
+        $resolvedPath = $this->getCache( $key );
 
         $resolvedPath ??= $this->resolvePath( (string) $path, (string) $relativeTo );
 
-        try {
-            if ( ! \is_string( $resolvedPath ) ) {
-                $this->logger?->warning(
-                    'Unable to resolve path from {key}: {path}.',
-                    ['key' => $key, 'path' => $path],
-                );
-            }
-            elseif ( \file_exists( $resolvedPath ) || $relativeTo ) {
-                $this->setCache( $key, $resolvedPath );
-            }
-            else {
-                $this->unsetCache( $key );
-            }
+        if ( ! \is_string( $resolvedPath ) ) {
+            $this->logger?->warning(
+                'Unable to resolve path from {key}: {path}.',
+                ['key' => $key, 'path' => $path],
+            );
         }
-        catch ( Throwable $exception ) {
-            $this->logger?->error(
-                'Unable to resolve parameter {key}.',
-                [
-                    'key'       => $key,
-                    'exception' => $exception,
-                ],
-            );
-            throw new RuntimeException(
-                "Unable to resolve path from {$key}.",
-                500,
-                $exception,
-            );
+        elseif ( \file_exists( $resolvedPath ) || $relativeTo ) {
+            $this->setCache( $key, $resolvedPath );
+        }
+        else {
+            $this->unsetCache( $key );
         }
 
         return $resolvedPath;
@@ -137,20 +113,10 @@ final class Pathfinder implements ActionInterface
         );
 
         $cacheKey = $this->cacheKey( $key );
+
         // Return cached parameter if found
-        try {
-            if ( $cached = $this->getCache( $cacheKey ) ) {
-                return $cached;
-            }
-        }
-        catch ( Throwable $exception ) {
-            $this->logger?->error(
-                'Unable to resolve parameter {key}.',
-                [
-                    'key'       => $key,
-                    'exception' => $exception,
-                ],
-            );
+        if ( $cached = $this->getCache( $cacheKey ) ) {
+            return $cached;
         }
 
         $parameter = $this->parameters[$key] ?? null;
@@ -187,18 +153,7 @@ final class Pathfinder implements ActionInterface
         $exists = \file_exists( $parameter );
 
         if ( $exists ) {
-            try {
-                $this->setCache( $cacheKey, $parameter );
-            }
-            catch ( Throwable $exception ) {
-                $this->logger?->error(
-                    'Unable to resolve parameter {key}.',
-                    [
-                        'key'       => $key,
-                        'exception' => $exception,
-                    ],
-                );
-            }
+            $this->setCache( $cacheKey, $parameter );
         }
         else {
             $this->logger?->info(
@@ -242,7 +197,6 @@ final class Pathfinder implements ActionInterface
                         ],
                     );
                 }
-
                 return $resolve ?? $match[0];
             },
             $parameter,
@@ -294,19 +248,8 @@ final class Pathfinder implements ActionInterface
         $cacheKey = $this->cacheKey( $string );
 
         // Return cached parameter if found
-        try {
-            if ( $cached = $this->getCache( $cacheKey ) ) {
-                return $cached;
-            }
-        }
-        catch ( Throwable $exception ) {
-            $this->logger?->error(
-                'Unable to resolve parameter {key}.',
-                [
-                    'key'       => $string,
-                    'exception' => $exception,
-                ],
-            );
+        if ( $cached = $this->getCache( $cacheKey ) ) {
+            return $cached;
         }
 
         // Check for $parameterKey
@@ -317,6 +260,13 @@ final class Pathfinder implements ActionInterface
 
             // Bail early on empty parameters
             if ( ! $parameter ) {
+                $this->logger?->error(
+                    'Pathfinder: {parameterKey}:{path}, could not resolve parameter.',
+                    [
+                        'parameterKey' => $parameterKey,
+                        'path'         => $path,
+                    ],
+                );
                 return null;
             }
 
@@ -324,23 +274,12 @@ final class Pathfinder implements ActionInterface
         }
 
         if ( $exists = \file_exists( $path ) ) {
-            try {
-                $this->setCache( $cacheKey, $path );
-            }
-            catch ( Throwable $exception ) {
-                $this->logger?->error(
-                    'Unable to resolve parameter {key}.',
-                    [
-                        'key'       => $cacheKey,
-                        'exception' => $exception,
-                    ],
-                );
-            }
+            $this->setCache( $cacheKey, $path );
         }
 
         if ( $parameterKey && ! $exists ) {
-            $this->logger?->error(
-                'Pathfinder: Unable to resolve {parameterKey}, the parameter does not provide a valid path.',
+            $this->logger?->warning(
+                'Pathfinder: {parameterKey}:{path}, path does not exist.',
                 [
                     'parameterKey' => $parameterKey,
                     'path'         => $path,
@@ -371,73 +310,15 @@ final class Pathfinder implements ActionInterface
         return ! ( \str_starts_with( $key, '.' ) || \str_ends_with( $key, '.' ) );
     }
 
-    // /**
-    //  * Retrieve a cached value.
-    //  *
-    //  * @param string $key
-    //  *
-    //  * @return null|string
-    //  */
-    // private function getCache( string $key ) : ?string
-    // {
-    //     if ( \is_array( $this->cache ) ) {
-    //         return $this->cache[$key] ?? null;
-    //     }
-    //
-    //     try {
-    //         if ( $this->cache->hasItem( $key ) ) {
-    //             return $this->cache->getItem( $key )->get();
-    //         }
-    //     }
-    //     catch ( Throwable $exception ) {
-    //         $this->logger?->error(
-    //             'getCache: {key}. '.$exception->getMessage(),
-    //             ['key' => $key, 'exception' => $exception],
-    //         );
-    //     }
-    //     return null;
-    // }
-
-    // private function setCache( string $key, string $value ) : void
-    // {
-    //     if ( \is_array( $this->cache ) ) {
-    //         $this->cache[$key] = $value;
-    //         return;
-    //     }
-    //
-    //     try {
-    //         $item = $this->cache->getItem( $key );
-    //         $item->set( $value );
-    //     }
-    //     catch ( Throwable $exception ) {
-    //         $this->logger?->error(
-    //             'setCache: {key}. '.$exception->getMessage(),
-    //             ['key' => $key, 'exception' => $exception],
-    //         );
-    //     }
-    // }
-    //
-    // private function unsetCache( string $key ) : void
-    // {
-    //     if ( \is_array( $this->cache ) ) {
-    //         unset( $this->cache[$key] );
-    //         return;
-    //     }
-    //
-    //     try {
-    //         $this->cache->deleteItem( $key );
-    //     }
-    //     catch ( Throwable $exception ) {
-    //         $this->logger?->error(
-    //             'unsetCache: {key}. '.$exception->getMessage(),
-    //             ['key' => $key, 'exception' => $exception],
-    //         );
-    //     }
-    // }
-
     private function cacheKey( null|string|bool|int|Stringable ...$from ) : string
     {
-        return \hash( 'xxh3', \implode( '', $from ) );
+        $string = \implode( '', $from );
+
+        if ( $this::validKey( $string ) ) {
+            return $string;
+        }
+
+        return \hash( 'xxh3', $string );
     }
 
     /**
