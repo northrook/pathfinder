@@ -77,7 +77,7 @@ final class Pathfinder implements ActionInterface
         $resolvedPath ??= $this->resolvePath( (string) $path, (string) $relativeTo );
 
         if ( ! \is_string( $resolvedPath ) ) {
-            $this->logger?->warning(
+            $this->logger?->notice(
                 'Unable to resolve path from {key}: {path}.',
                 ['key' => $key, 'path' => $path],
             );
@@ -278,7 +278,7 @@ final class Pathfinder implements ActionInterface
         }
 
         if ( $parameterKey && ! $exists ) {
-            $this->logger?->warning(
+            $this->logger?->notice(
                 'Pathfinder: {parameterKey}:{path}, path does not exist.',
                 [
                     'parameterKey' => $parameterKey,
