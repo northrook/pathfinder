@@ -70,11 +70,15 @@ final class Pathfinder implements ActionInterface
         string|Stringable      $path,
         null|string|Stringable $relativeTo = null,
     ) : string {
-        $key = $this->cacheKey( $path.$relativeTo );
+        $getPath      = (string) $path;
+        $relativePath = $relativeTo ? (string) $relativeTo : null;
 
+        $key = $this->cacheKey( $getPath.$relativePath );
+
+        /** @var ?string $resolvedPath */
         $resolvedPath = $this->getCache( $key );
 
-        $resolvedPath ??= $this->resolvePath( (string) $path, (string) $relativeTo );
+        $resolvedPath ??= $this->resolvePath( $getPath, $relativePath );
 
         if ( ! \is_string( $resolvedPath ) ) {
             $this->logger?->notice(
@@ -82,14 +86,14 @@ final class Pathfinder implements ActionInterface
                 ['key' => $key, 'path' => $path],
             );
         }
-        elseif ( \file_exists( $resolvedPath ) || $relativeTo ) {
+        elseif ( \file_exists( $resolvedPath ) || $relativePath ) {
             $this->setCache( $key, $resolvedPath );
         }
         else {
             $this->unsetCache( $key );
         }
 
-        return $resolvedPath;
+        return $resolvedPath ?? $getPath;
     }
 
     /**
