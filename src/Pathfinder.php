@@ -11,7 +11,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Cache\CachePoolTrait;
 use Stringable, InvalidArgumentException;
-use function Support\{isPath, normalizePath};
+use function Support\{isPath, normalizePath, normalizeUrl};
 
 final class Pathfinder implements ActionInterface
 {
@@ -58,6 +58,21 @@ final class Pathfinder implements ActionInterface
         $path = $this->get( $path, $relativeTo );
 
         return new Path( $path );
+    }
+
+    /**
+     * A `normalizeUrl` filtered string.
+     *
+     * @param string|Stringable      $path
+     * @param null|string|Stringable $relativeTo
+     *
+     * @return string
+     */
+    public function getUrl(
+        string|Stringable      $path,
+        null|string|Stringable $relativeTo = null,
+    ) : string {
+        return normalizeUrl( $this->get( $path, $relativeTo ) );
     }
 
     /**
