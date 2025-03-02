@@ -6,16 +6,21 @@ namespace Core;
 
 use Core\Pathfinder\Path;
 use Core\Interface\ActionInterface;
+use JetBrains\PhpStorm\Language;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Cache\CachePoolTrait;
-use Stringable, InvalidArgumentException;
-use function Support\{isPath, normalizePath, normalizeUrl};
+use Stringable;
+use function Support\{as_string, isPath, normalizePath, normalizeUrl, str_includes};
+use const Support\LOG_LEVEL;
+use RuntimeException;
 
 final class Pathfinder implements ActionInterface
 {
     use CachePoolTrait;
+
+    public bool $quiet = false;
 
     /**
      * @param array<string, string>       $parameters   [placeholder]
@@ -96,7 +101,8 @@ final class Pathfinder implements ActionInterface
         $resolvedPath ??= $this->resolvePath( $getPath, $relativePath );
 
         if ( ! \is_string( $resolvedPath ) ) {
-            $this->logger?->notice(
+            $this->log(
+                'notice',
                 'Unable to resolve path from {key}: {path}.',
                 ['key' => $key, 'path' => $path],
             );
@@ -107,6 +113,8 @@ final class Pathfinder implements ActionInterface
         else {
             $this->unsetCache( $key );
         }
+
+        $this->quiet = false;
 
         return $resolvedPath ?? $getPath;
     }
@@ -150,7 +158,8 @@ final class Pathfinder implements ActionInterface
                     ? 'empty string'
                     : \gettype( $parameter );
 
-            $this->logger?->warning(
+            $this->log(
+                'warning',
                 'No value for {key}, it is {value}',
                 ['value' => $value, 'key' => $key],
             );
@@ -165,7 +174,7 @@ final class Pathfinder implements ActionInterface
         $parameter = normalizePath( $parameter );
 
         if ( ! isPath( $parameter ) ) {
-            $this->logger?->warning( 'The value for {key}, is not path-like.', ['key' => $key] );
+            $this->log( 'warning', 'The value for {key}, is not path-like.', ['key' => $key] );
             return null;
         }
 
@@ -175,7 +184,8 @@ final class Pathfinder implements ActionInterface
             $this->setCache( $cacheKey, $parameter );
         }
         else {
-            $this->logger?->info(
+            $this->log(
+                'info',
                 'Pathfinder: Exists {exists} - {value} from {key}.',
                 ['exists' => 'false', 'value' => $parameter, 'key' => $key],
             );
@@ -208,12 +218,10 @@ final class Pathfinder implements ActionInterface
                 $resolve = $this->getParameter( $match[1] );
 
                 if ( ! $resolve ) {
-                    $this->logger?->warning(
+                    $this->log(
+                        'warning',
                         'Unable to resolve parameter {key} in {parameter}.',
-                        [
-                            'key'       => $match[1],
-                            'parameter' => $parameter,
-                        ],
+                        ['key' => $match[1], 'parameter' => $parameter],
                     );
                 }
                 return $resolve ?? $match[0];
@@ -246,16 +254,11 @@ final class Pathfinder implements ActionInterface
             }
             // Handle mismatched relative paths
             else {
-                if ( $this->logger ) {
-                    $this->logger->critical(
-                        'Relative path {relativeTo} to {path}, is not valid.',
-                        ['relativeTo' => $relativeTo, 'path' => $path],
-                    );
-                }
-                else {
-                    $message = "Relative path [{$relativeTo}][{$path}], is not valid.";
-                    throw new InvalidArgumentException( $message );
-                }
+                $this->log(
+                    'critical',
+                    'Relative path {relativeTo} to {path}, is not valid.',
+                    ['relativeTo' => $relativeTo, 'path' => $path],
+                );
             }
         }
 
@@ -279,7 +282,8 @@ final class Pathfinder implements ActionInterface
 
             // Bail early on empty parameters
             if ( ! $parameter ) {
-                $this->logger?->error(
+                $this->log(
+                    'error',
                     'Pathfinder: {parameterKey}:{path}, could not resolve parameter.',
                     [
                         'parameterKey' => $parameterKey,
@@ -292,19 +296,23 @@ final class Pathfinder implements ActionInterface
             $path = normalizePath( $parameter, $path );
         }
 
+        // Return early if the path contains at least one glob wildcard
+        if ( str_includes( $path, '/*' ) ) {
+            return $path;
+        }
+
         if ( $exists = \file_exists( $path ) ) {
             $this->setCache( $cacheKey, $path );
         }
 
         if ( $parameterKey && ! $exists ) {
-            $this->logger?->notice(
+            $this->log(
+                'notice',
                 'Pathfinder: {parameterKey}:{path}, path does not exist.',
-                [
-                    'parameterKey' => $parameterKey,
-                    'path'         => $path,
-                ],
+                \get_defined_vars(),
             );
         }
+
         return $path;
     }
 
@@ -370,5 +378,38 @@ final class Pathfinder implements ActionInterface
         }
 
         return [$parameterKey, \strchr( $string, DIRECTORY_SEPARATOR ) ?: ''];
+    }
+
+    /**
+     * @param \Psr\Log\LogLevel::* $level
+     * @param string               $message
+     * @param array<string, mixed> $context
+     *
+     * @return void
+     */
+    private function log(
+        string $level,
+        #[Language( 'Smarty' )]
+        string $message,
+        array  $context = [],
+    ) : void {
+        $code = LOG_LEVEL[$level];
+
+        if ( $this->logger === null && ( $code >= LOG_LEVEL['error'] ) ) {
+            foreach ( $context as $key => $value ) {
+                if ( ! \str_contains( $message, "{{$key}}" ) ) {
+                    continue;
+                }
+                $value   = as_string( $value );
+                $message = \str_replace( "{{$key}}", "'{$value}'", $message );
+            }
+            throw new RuntimeException( "Pathfinder encountered a '{$level}': {$message}" );
+        }
+
+        if ( $this->quiet && $code < LOG_LEVEL['error'] ) {
+            return;
+        }
+
+        $this->logger?->log( $code, $message, $context );
     }
 }
