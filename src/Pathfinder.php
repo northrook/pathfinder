@@ -403,7 +403,7 @@ final class Pathfinder implements ActionInterface
                 $value   = as_string( $value );
                 $message = \str_replace( "{{$key}}", "'{$value}'", $message );
             }
-            throw new RuntimeException( "Pathfinder encountered a '{$level}': {$message}" );
+            throw new RuntimeException( "Pathfinder encountered a '{$level}' event: {$message}" );
         }
 
         if ( $this->quiet && $code < LOG_LEVEL['error'] ) {
