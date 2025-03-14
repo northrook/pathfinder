@@ -23,18 +23,23 @@ final class Pathfinder implements ActionInterface
     public bool $quiet = false;
 
     /**
-     * @param array<string, string>       $parameters   [placeholder]
+     * @param array<string, string>       $parameters        [placeholder]
      * @param null|ParameterBagInterface  $parameterBag
      * @param null|CacheItemPoolInterface $cache
      * @param null|LoggerInterface        $logger
+     * @param bool                        $deferCacheCommits
      */
     public function __construct(
         private readonly array                  $parameters = [],
         private readonly ?ParameterBagInterface $parameterBag = null,
         ?CacheItemPoolInterface                 $cache = null,
         private readonly ?LoggerInterface       $logger = null,
+        bool                                    $deferCacheCommits = true,
     ) {
-        $this->cache = $cache ?? [];
+        $this->assignCacheAdapter(
+            adapter : $cache,
+            defer   : $deferCacheCommits,
+        );
     }
 
     /**
