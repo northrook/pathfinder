@@ -22,9 +22,6 @@
     "northrook/core": "dev-main",
     "northrook/cache": "dev-main"
   },
-  "scripts": {
-    "phpstan": "vendor/bin/phpstan analyse"
-  },
   "require-dev": {
     "northrook/php-cs": "dev-main",
     "symfony/cache-contracts": "^3.5",
@@ -32,5 +29,8 @@
     "symfony/cache": "^7.2",
     "symfony/error-handler": "^7.2",
     "symfony/filesystem": "^7.2"
+  },
+  "scripts": {
+    "phpstan": "vendor/bin/phpstan analyse src"
   }
 }
