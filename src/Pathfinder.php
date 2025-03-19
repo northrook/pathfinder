@@ -12,6 +12,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Cache\CachePoolTrait;
 use Stringable;
+use Symfony\Component\Stopwatch\Stopwatch;
 use function Support\{as_string, isPath, normalizePath, normalizeUrl, str_includes};
 use const Support\LOG_LEVEL;
 use RuntimeException;
@@ -25,20 +26,23 @@ final class Pathfinder implements ActionInterface
     /**
      * @param array<string, string>       $parameters        [placeholder]
      * @param null|ParameterBagInterface  $parameterBag
-     * @param null|CacheItemPoolInterface $cache
      * @param null|LoggerInterface        $logger
+     * @param null|CacheItemPoolInterface $cache
+     * @param ?Stopwatch                  $stopwatch
      * @param bool                        $deferCacheCommits
      */
     public function __construct(
         private readonly array                  $parameters = [],
         private readonly ?ParameterBagInterface $parameterBag = null,
-        ?CacheItemPoolInterface                 $cache = null,
         private readonly ?LoggerInterface       $logger = null,
+        ?CacheItemPoolInterface                 $cache = null,
+        ?Stopwatch                              $stopwatch = null,
         bool                                    $deferCacheCommits = true,
     ) {
         $this->assignCacheAdapter(
-            adapter : $cache,
-            defer   : $deferCacheCommits,
+            adapter   : $cache,
+            defer     : $deferCacheCommits,
+            stopwatch : $stopwatch,
         );
     }
 
@@ -115,9 +119,11 @@ final class Pathfinder implements ActionInterface
         elseif ( \file_exists( $resolvedPath ) || $relativePath ) {
             $this->setCache( $key, $resolvedPath );
         }
-        else {
-            $this->unsetCache( $key );
-        }
+        // TODO: [lo] - This should be handled by a 'purge outdated' ran during cleanup,
+        //              Should not be performed during runtime.
+        // else {
+        //     $this->unsetCache( $key );
+        // }
 
         $this->quiet = false;
 
