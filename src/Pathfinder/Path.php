@@ -6,7 +6,7 @@ namespace Core\Pathfinder;
 
 use Symfony\Component\Filesystem\Filesystem;
 use Stringable, SplFileInfo, ValueError, InvalidArgumentException, RuntimeException, BadMethodCallException;
-use function Support\{isPath, isUrl, normalizePath};
+use function Support\{is_path, is_url, normalize_path};
 use const LOCK_EX;
 
 class Path implements Stringable
@@ -123,7 +123,7 @@ class Path implements Stringable
 
     final public function isPath() : bool
     {
-        return isPath( $this->fileInfo->getPathname() );
+        return is_path( $this->fileInfo->getPathname() );
     }
 
     final public function isFile() : bool
@@ -148,7 +148,7 @@ class Path implements Stringable
 
     final public function isUrl( ?string $protocol = null ) : bool
     {
-        return isUrl( $this->fileInfo->getPathname(), $protocol );
+        return is_url( $this->fileInfo->getPathname(), $protocol );
     }
 
     final public function isRelative( bool $traversible = false ) : bool
@@ -303,7 +303,7 @@ class Path implements Stringable
     {
         $string = (string) $path;
         if ( ! \str_contains( $string, '://' ) ) {
-            $string = normalizePath( $string );
+            $string = normalize_path( $string );
         }
         $this->fileInfo = new SplFileInfo( $string );
     }

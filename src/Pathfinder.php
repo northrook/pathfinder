@@ -11,11 +11,11 @@ use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Cache\CachePoolTrait;
-use Stringable;
 use Symfony\Component\Stopwatch\Stopwatch;
-use function Support\{as_string, isPath, normalizePath, normalizeUrl, str_includes};
-use const Support\LOG_LEVEL;
+use Stringable;
 use RuntimeException;
+use function Support\{as_string, str_includes, is_path, normalize_path, normalize_url};
+use const Support\LOG_LEVEL;
 
 final class Pathfinder implements ActionInterface
 {
@@ -86,7 +86,7 @@ final class Pathfinder implements ActionInterface
         string|Stringable      $path,
         null|string|Stringable $relativeTo = null,
     ) : string {
-        return normalizeUrl( $this->get( $path, $relativeTo ) );
+        return normalize_url( $this->get( $path, $relativeTo ) );
     }
 
     /**
@@ -182,9 +182,9 @@ final class Pathfinder implements ActionInterface
             $parameter = $this->resolveNestedParameters( $parameter );
         }
 
-        $parameter = normalizePath( $parameter );
+        $parameter = normalize_path( $parameter );
 
-        if ( ! isPath( $parameter ) ) {
+        if ( ! is_path( $parameter ) ) {
             $this->log( 'warning', 'The value for {key}, is not path-like.', ['key' => $key] );
             return null;
         }
@@ -304,7 +304,7 @@ final class Pathfinder implements ActionInterface
                 return null;
             }
 
-            $path = normalizePath( $parameter, $path );
+            $path = normalize_path( $parameter, $path );
         }
 
         // Return early if the path contains at least one glob wildcard
@@ -369,10 +369,10 @@ final class Pathfinder implements ActionInterface
     private function resolveProvidedString( string $string ) : array
     {
         // Normalize separators to a forward slash
-        $string = \str_replace( ['\\', '/'], DIRECTORY_SEPARATOR, $string );
+        $string = \str_replace( ['\\', '/'], DIR_SEP, $string );
 
         // We are only concerned with the first segment
-        $parameterKey = \strstr( $string, DIRECTORY_SEPARATOR, true );
+        $parameterKey = \strstr( $string, DIR_SEP, true );
 
         if ( $parameterKey === false ) {
             $parameterKey = $string;
@@ -388,7 +388,7 @@ final class Pathfinder implements ActionInterface
             return [false, $string];
         }
 
-        return [$parameterKey, \strchr( $string, DIRECTORY_SEPARATOR ) ?: ''];
+        return [$parameterKey, \strchr( $string, DIR_SEP ) ?: ''];
     }
 
     /**
