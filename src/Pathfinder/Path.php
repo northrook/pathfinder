@@ -143,7 +143,7 @@ class Path implements Stringable
 
     final public function isDotDirectory() : bool
     {
-        return \str_contains( $this->fileInfo->getPath(), DIRECTORY_SEPARATOR.'.' );
+        return \str_contains( $this->fileInfo->getPath(), DIR_SEP.'.' );
     }
 
     final public function isUrl( ?string $protocol = null ) : bool
@@ -154,10 +154,10 @@ class Path implements Stringable
     final public function isRelative( bool $traversible = false ) : bool
     {
         return \str_starts_with(
-            $this->fileInfo->getPathname(),
+            $this->getPathname(),
             $traversible
-                        ? '..'.DIRECTORY_SEPARATOR
-                        : DIRECTORY_SEPARATOR,
+                        ? '..'.DIR_SEP
+                        : DIR_SEP,
         );
     }
 
@@ -216,21 +216,17 @@ class Path implements Stringable
             return $path;
         }
 
-        if ( $path ) {
-            return $path;
-        }
-
-        return $this->fileInfo->getPathname();
+        return $this->normalize( $path ?: $this->fileInfo->getPathname() );
     }
 
     public function getPathname() : string
     {
-        return $this->fileInfo->getPathname();
+        return $this->normalize( $this->fileInfo->getPathname() );
     }
 
     public function getPath() : string
     {
-        return $this->fileInfo->getPath();
+        return $this->normalize( $this->fileInfo->getPath() );
     }
 
     /**
@@ -240,7 +236,9 @@ class Path implements Stringable
      */
     final public function getFilename() : string
     {
-        return \strrchr( $this->fileInfo->getFilename(), '.', true ) ?: $this->fileInfo->getFilename();
+        return $this->normalize(
+            \strrchr( $this->fileInfo->getFilename(), '.', true ) ?: $this->fileInfo->getFilename(),
+        );
     }
 
     final public function getContents( bool $throwOnError = false ) : ?string
@@ -282,7 +280,7 @@ class Path implements Stringable
         $glob = [];
 
         foreach ( (array) $pattern as $match ) {
-            $match = \DIRECTORY_SEPARATOR.\ltrim( $match, '\\/' );
+            $match = \DIR_SEP.\ltrim( $match, '\\/' );
             $glob  = [...$glob, ...( \glob( $path.$match, $flags ) ?: [] )];
         }
 
@@ -311,5 +309,10 @@ class Path implements Stringable
     final public static function from( string|Stringable $filename ) : self
     {
         return new self( $filename );
+    }
+
+    private function normalize( string|Stringable $path ) : string
+    {
+        return \str_replace( ['\\', '/'], DIR_SEP, (string) $path );
     }
 }
