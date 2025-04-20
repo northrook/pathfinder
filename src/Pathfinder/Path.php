@@ -313,6 +313,6 @@ class Path implements Stringable
 
     private function normalize( string|Stringable $path ) : string
     {
-        return \str_replace( ['\\', '/'], DIR_SEP, (string) $path );
+        return \strtr( (string) $path, '\\', DIR_SEP );
     }
 }

@@ -185,7 +185,7 @@ final class Pathfinder implements ActionInterface
         $parameter = normalize_path( $parameter );
 
         if ( ! is_path( $parameter ) ) {
-            $this->log( 'warning', 'The value for {key}, is not path-like.', ['key' => $key] );
+            $this->log( 'warning', 'The value for {key} is not path-like.', ['key' => $key] );
             return null;
         }
 
@@ -243,7 +243,7 @@ final class Pathfinder implements ActionInterface
 
     protected function resolvePath( string $path, ?string $relativeTo = null ) : ?string
     {
-        // Resolve potential relative path first
+        // Resolve potential relative paths first
         if ( $relativeTo ) {
             $relativeTo = $this->resolveParameter( $relativeTo );
         }
@@ -256,7 +256,7 @@ final class Pathfinder implements ActionInterface
             return null;
         }
 
-        // If relative, and relative path exists
+        // If relative, and the relative path exists
         if ( $relativeTo ) {
             // Check they match
             if ( \str_starts_with( $path, $relativeTo ) ) {
@@ -304,7 +304,7 @@ final class Pathfinder implements ActionInterface
                 return null;
             }
 
-            $path = normalize_path( $parameter, $path );
+            $path = normalize_path( [$parameter, $path] );
         }
 
         // Return early if the path contains at least one glob wildcard
@@ -319,7 +319,7 @@ final class Pathfinder implements ActionInterface
         if ( $parameterKey && ! $exists ) {
             $this->log(
                 'notice',
-                'Pathfinder: {parameterKey}:{path}, path does not exist.',
+                'Pathfinder: {parameterKey}:{path}, the path does not exist.',
                 \get_defined_vars(),
             );
         }
@@ -369,7 +369,7 @@ final class Pathfinder implements ActionInterface
     private function resolveProvidedString( string $string ) : array
     {
         // Normalize separators to a forward slash
-        $string = \str_replace( ['\\', '/'], DIR_SEP, $string );
+        $string = \strtr( $string, '\\', DIR_SEP );
 
         // We are only concerned with the first segment
         $parameterKey = \strstr( $string, DIR_SEP, true );
