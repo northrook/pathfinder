@@ -52,7 +52,7 @@ class Path implements Stringable
      * @param bool            $lock
      * @param bool            $makeRequiredDirectories
      *
-     * @return bool|int True if the file was written to, false if it already existed or an error occurred
+     * @return bool|int True if the file was written to, false if it already existed, or an error occurred
      */
     final public function save(
         mixed $content,
@@ -86,7 +86,7 @@ class Path implements Stringable
      * @param string $targetFile
      * @param bool   $overwriteNewerFiles
      *
-     * @return bool True if the file was written to, false if it already existed or an error occurred
+     * @return bool True if the file was written to, false if it already existed, or an error occurred
      */
     final public function copy( string $targetFile, bool $overwriteNewerFiles = false ) : bool
     {

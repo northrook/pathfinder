@@ -5,36 +5,28 @@ declare(strict_types=1);
 namespace Core;
 
 use Core\Pathfinder\Path;
-use Core\Interface\ActionInterface;
-use JetBrains\PhpStorm\Language;
+use Core\Interface\{ActionInterface, LogHandler, Loggable};
 use Psr\Cache\CacheItemPoolInterface;
-use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Cache\CachePoolTrait;
 use Symfony\Component\Stopwatch\Stopwatch;
 use Stringable;
-use RuntimeException;
-use function Support\{as_string, str_includes, is_path, normalize_path, normalize_url};
-use const Support\LOG_LEVEL;
+use function Support\{str_includes, is_path, normalize_path, normalize_url};
 
-final class Pathfinder implements ActionInterface
+final class Pathfinder implements ActionInterface, Loggable
 {
-    use CachePoolTrait;
-
-    public bool $quiet = false;
+    use CachePoolTrait, LogHandler;
 
     /**
-     * @param array<string, string>       $parameters        [placeholder]
-     * @param null|ParameterBagInterface  $parameterBag
-     * @param null|LoggerInterface        $logger
-     * @param null|CacheItemPoolInterface $cache
-     * @param ?Stopwatch                  $stopwatch
-     * @param bool                        $deferCacheCommits
+     * @param array<string, string>   $parameters        [placeholder]
+     * @param ?ParameterBagInterface  $parameterBag
+     * @param ?CacheItemPoolInterface $cache
+     * @param ?Stopwatch              $stopwatch
+     * @param bool                    $deferCacheCommits
      */
     public function __construct(
         private readonly array                  $parameters = [],
         private readonly ?ParameterBagInterface $parameterBag = null,
-        private readonly ?LoggerInterface       $logger = null,
         ?CacheItemPoolInterface                 $cache = null,
         ?Stopwatch                              $stopwatch = null,
         bool                                    $deferCacheCommits = true,
@@ -111,9 +103,9 @@ final class Pathfinder implements ActionInterface
 
         if ( ! \is_string( $resolvedPath ) ) {
             $this->log(
-                'notice',
                 'Unable to resolve path from {key}: {path}.',
                 ['key' => $key, 'path' => $path],
+                'notice',
             );
         }
         elseif ( \file_exists( $resolvedPath ) || $relativePath ) {
@@ -124,8 +116,6 @@ final class Pathfinder implements ActionInterface
         // else {
         //     $this->unsetCache( $key );
         // }
-
-        $this->quiet = false;
 
         return $resolvedPath ?? $getPath;
     }
@@ -170,9 +160,9 @@ final class Pathfinder implements ActionInterface
                     : \gettype( $parameter );
 
             $this->log(
-                'warning',
                 'No value for {key}, it is {value}',
                 ['value' => $value, 'key' => $key],
+                'warning',
             );
             return null;
         }
@@ -185,21 +175,12 @@ final class Pathfinder implements ActionInterface
         $parameter = normalize_path( $parameter );
 
         if ( ! is_path( $parameter ) ) {
-            $this->log( 'warning', 'The value for {key} is not path-like.', ['key' => $key] );
+            $this->log( 'The value for {key} is not path-like.', ['key' => $key], 'warning' );
             return null;
         }
 
-        $exists = \file_exists( $parameter );
-
-        if ( $exists ) {
+        if ( \file_exists( $parameter ) ) {
             $this->setCache( $cacheKey, $parameter );
-        }
-        else {
-            $this->log(
-                'info',
-                'Pathfinder: Exists {exists} - {value} from {key}.',
-                ['exists' => 'false', 'value' => $parameter, 'key' => $key],
-            );
         }
 
         return $parameter;
@@ -230,9 +211,9 @@ final class Pathfinder implements ActionInterface
 
                 if ( ! $resolve ) {
                     $this->log(
-                        'warning',
                         'Unable to resolve parameter {key} in {parameter}.',
                         ['key' => $match[1], 'parameter' => $parameter],
+                        'warning',
                     );
                 }
                 return $resolve ?? $match[0];
@@ -258,7 +239,7 @@ final class Pathfinder implements ActionInterface
 
         // If relative, and the relative path exists
         if ( $relativeTo ) {
-            // Check they match
+            // Check that they match
             if ( \str_starts_with( $path, $relativeTo ) ) {
                 // Subtract the relative path
                 $path = \substr( $path, \strlen( $relativeTo ) );
@@ -266,9 +247,9 @@ final class Pathfinder implements ActionInterface
             // Handle mismatched relative paths
             else {
                 $this->log(
-                    'critical',
-                    'Relative path {relativeTo} to {path}, is not valid.',
+                    'Relative path {relativeTo} to {path} is not valid.',
                     ['relativeTo' => $relativeTo, 'path' => $path],
+                    'critical',
                 );
             }
         }
@@ -294,12 +275,12 @@ final class Pathfinder implements ActionInterface
             // Bail early on empty parameters
             if ( ! $parameter ) {
                 $this->log(
-                    'error',
                     'Pathfinder: {parameterKey}:{path}, could not resolve parameter.',
                     [
                         'parameterKey' => $parameterKey,
                         'path'         => $path,
                     ],
+                    'error',
                 );
                 return null;
             }
@@ -318,9 +299,9 @@ final class Pathfinder implements ActionInterface
 
         if ( $parameterKey && ! $exists ) {
             $this->log(
-                'notice',
                 'Pathfinder: {parameterKey}:{path}, the path does not exist.',
                 \get_defined_vars(),
+                'notice',
             );
         }
 
@@ -389,38 +370,5 @@ final class Pathfinder implements ActionInterface
         }
 
         return [$parameterKey, \strchr( $string, DIR_SEP ) ?: ''];
-    }
-
-    /**
-     * @param \Psr\Log\LogLevel::* $level
-     * @param string               $message
-     * @param array<string, mixed> $context
-     *
-     * @return void
-     */
-    private function log(
-        string $level,
-        #[Language( 'Smarty' )]
-        string $message,
-        array  $context = [],
-    ) : void {
-        $code = LOG_LEVEL[$level];
-
-        if ( $this->logger === null && ( $code >= LOG_LEVEL['error'] ) ) {
-            foreach ( $context as $key => $value ) {
-                if ( ! \str_contains( $message, "{{$key}}" ) ) {
-                    continue;
-                }
-                $value   = as_string( $value );
-                $message = \str_replace( "{{$key}}", "'{$value}'", $message );
-            }
-            throw new RuntimeException( "Pathfinder encountered a '{$level}' event: {$message}" );
-        }
-
-        if ( $this->quiet && $code < LOG_LEVEL['error'] ) {
-            return;
-        }
-
-        $this->logger?->log( $code, $message, $context );
     }
 }
