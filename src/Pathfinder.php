@@ -6,16 +6,16 @@ namespace Core;
 
 use Core\Pathfinder\Path;
 use Core\Interface\{ActionInterface, LogHandler, Loggable};
+use Cache\CacheHandler;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
-use Cache\CachePoolTrait;
 use Symfony\Component\Stopwatch\Stopwatch;
 use Stringable;
 use function Support\{str_includes, is_path, normalize_path, normalize_url};
 
 final class Pathfinder implements ActionInterface, Loggable
 {
-    use CachePoolTrait, LogHandler;
+    use CacheHandler, LogHandler;
 
     /**
      * @param array<string, string>   $parameters        [placeholder]
