@@ -15,7 +15,9 @@ use function Support\{str_includes, is_path, normalize_path, normalize_url};
 
 final class Pathfinder implements ActionInterface, Loggable
 {
-    use CacheHandler, LogHandler;
+    use LogHandler;
+
+    private readonly CacheHandler $cache;
 
     /**
      * @param array<string, string>   $parameters        [placeholder]
@@ -31,10 +33,10 @@ final class Pathfinder implements ActionInterface, Loggable
         ?Stopwatch                              $stopwatch = null,
         bool                                    $deferCacheCommits = true,
     ) {
-        $this->assignCacheAdapter(
-            adapter   : $cache,
-            defer     : $deferCacheCommits,
-            stopwatch : $stopwatch,
+        $this->cache = new CacheHandler(
+            adapter     : $cache,
+            deferCommit : $deferCacheCommits,
+            stopwatch   : $stopwatch,
         );
     }
 
@@ -97,7 +99,7 @@ final class Pathfinder implements ActionInterface, Loggable
         $key = $this->cacheKey( $getPath.$relativePath );
 
         /** @var ?string $resolvedPath */
-        $resolvedPath = $this->getCache( $key );
+        $resolvedPath = $this->cache->get( $key );
 
         $resolvedPath ??= $this->resolvePath( $getPath, $relativePath );
 
@@ -109,12 +111,12 @@ final class Pathfinder implements ActionInterface, Loggable
             );
         }
         elseif ( \file_exists( $resolvedPath ) || $relativePath ) {
-            $this->setCache( $key, $resolvedPath );
+            $this->cache->set( $key, $resolvedPath );
         }
         // TODO: [lo] - This should be handled by a 'purge outdated' ran during cleanup,
         //              Should not be performed during runtime.
         // else {
-        //     $this->unsetCache( $key );
+        //     $this->uncache->$this->set( $key );
         // }
 
         return $resolvedPath ?? $getPath;
@@ -143,7 +145,7 @@ final class Pathfinder implements ActionInterface, Loggable
         $cacheKey = $this->cacheKey( $key );
 
         // Return cached parameter if found
-        if ( $cached = $this->getCache( $cacheKey ) ) {
+        if ( $cached = $this->cache->get( $cacheKey ) ) {
             return $cached;
         }
 
@@ -180,7 +182,7 @@ final class Pathfinder implements ActionInterface, Loggable
         }
 
         if ( \file_exists( $parameter ) ) {
-            $this->setCache( $cacheKey, $parameter );
+            $this->cache->set( $cacheKey, $parameter );
         }
 
         return $parameter;
@@ -262,7 +264,7 @@ final class Pathfinder implements ActionInterface, Loggable
         $cacheKey = $this->cacheKey( $string );
 
         // Return cached parameter if found
-        if ( $cached = $this->getCache( $cacheKey ) ) {
+        if ( $cached = $this->cache->get( $cacheKey ) ) {
             return $cached;
         }
 
@@ -294,7 +296,7 @@ final class Pathfinder implements ActionInterface, Loggable
         }
 
         if ( $exists = \file_exists( $path ) ) {
-            $this->setCache( $cacheKey, $path );
+            $this->cache->set( $cacheKey, $path );
         }
 
         if ( $parameterKey && ! $exists ) {
