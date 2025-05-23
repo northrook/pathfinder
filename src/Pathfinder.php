@@ -11,7 +11,7 @@ use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\Stopwatch\Stopwatch;
 use Stringable;
-use function Support\{str_includes, is_path, normalize_path, normalize_url};
+use function Support\{str_includes_any, is_path, normalize_path, normalize_url};
 
 final class Pathfinder implements ActionInterface, Loggable
 {
@@ -291,7 +291,7 @@ final class Pathfinder implements ActionInterface, Loggable
         }
 
         // Return early if the path contains at least one glob wildcard
-        if ( str_includes( $path, '/*' ) ) {
+        if ( str_includes_any( $path, '/*' ) ) {
             return $path;
         }
 
