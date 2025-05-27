@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Core;
 
+use Core\Autowire\Logger;
 use Core\Pathfinder\Path;
-use Core\Interface\{ActionInterface, LogHandler, Loggable};
+use Core\Interface\{ActionInterface, Loggable};
 use Cache\CacheHandler;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
@@ -15,7 +16,7 @@ use function Support\{str_includes_any, is_path, normalize_path, normalize_url};
 
 final class Pathfinder implements ActionInterface, Loggable
 {
-    use LogHandler;
+    use Logger;
 
     private readonly CacheHandler $cache;
 
