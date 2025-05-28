@@ -37,7 +37,7 @@ final class Pathfinder implements ActionInterface, Loggable
         $this->cache = new CacheHandler(
             adapter     : $cache,
             deferCommit : $deferCacheCommits,
-            stopwatch   : $stopwatch,
+            profiler    : $stopwatch,
         );
     }
 
