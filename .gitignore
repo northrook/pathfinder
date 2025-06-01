@@ -11,5 +11,5 @@
 /*.cache
 /*.lock
 /*.css
-/*.php
+/index.php
 /package-lock.json
