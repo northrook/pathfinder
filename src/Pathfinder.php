@@ -6,7 +6,7 @@ namespace Core;
 
 use Core\Autowire\Logger;
 use Core\Pathfinder\Path;
-use Core\Interface\{ActionInterface, Loggable};
+use Core\Interface\{ActionInterface, Loggable, ProfilerInterface};
 use Cache\CacheHandler;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
@@ -21,23 +21,23 @@ final class Pathfinder implements ActionInterface, Loggable
     private readonly CacheHandler $cache;
 
     /**
-     * @param array<string, string>   $parameters        [placeholder]
-     * @param ?ParameterBagInterface  $parameterBag
-     * @param ?CacheItemPoolInterface $cache
-     * @param ?Stopwatch              $stopwatch
-     * @param bool                    $deferCacheCommits
+     * @param array<string, string>                 $parameters        [placeholder]
+     * @param ?ParameterBagInterface                $parameterBag
+     * @param ?CacheItemPoolInterface               $cache
+     * @param null|bool|ProfilerInterface|Stopwatch $profiler
+     * @param bool                                  $deferCacheCommits
      */
     public function __construct(
         private readonly array                  $parameters = [],
         private readonly ?ParameterBagInterface $parameterBag = null,
         ?CacheItemPoolInterface                 $cache = null,
-        ?Stopwatch                              $stopwatch = null,
+        null|bool|Stopwatch|ProfilerInterface   $profiler = null,
         bool                                    $deferCacheCommits = true,
     ) {
         $this->cache = new CacheHandler(
             adapter     : $cache,
             deferCommit : $deferCacheCommits,
-            profiler    : $stopwatch,
+            profiler    : $profiler,
         );
     }
 
