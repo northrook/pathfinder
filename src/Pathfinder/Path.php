@@ -90,6 +90,7 @@ class Path implements Stringable
      */
     final public function copy( string $targetFile, bool $overwriteNewerFiles = false ) : bool
     {
+        // TODO : Use \Support\file_copy
         if ( \class_exists( Filesystem::class ) ) {
             ( new Filesystem() )->copy( $this->fileInfo->getPathname(), $targetFile, $overwriteNewerFiles );
         }
@@ -102,6 +103,7 @@ class Path implements Stringable
      */
     final public function remove() : void
     {
+        // TODO : Use \Support\file_remove
         if ( \class_exists( Filesystem::class ) ) {
             ( new Filesystem() )->remove( $this->fileInfo->getPathname() );
             return;

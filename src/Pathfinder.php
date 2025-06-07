@@ -6,39 +6,63 @@ namespace Core;
 
 use Core\Autowire\Logger;
 use Core\Pathfinder\Path;
-use Core\Interface\{ActionInterface, Loggable, ProfilerInterface};
-use Cache\CacheHandler;
-use Psr\Cache\CacheItemPoolInterface;
-use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
-use Symfony\Component\Stopwatch\Stopwatch;
-use Stringable;
-use function Support\{str_includes_any, is_path, normalize_path, normalize_url};
+use Core\Interface\PathfinderInterface;
+use Stringable, Countable;
+use function Support\{
+    get_system_cache_directory,
+    path_valid,
+    datetime,
+    file_save,
+    is_path,
+    str_includes_any,
+    normalize_path,
+    normalize_url,
+    slug,
+};
 
-final class Pathfinder implements ActionInterface, Loggable
+final class Pathfinder implements PathfinderInterface, Countable
 {
     use Logger;
 
-    private readonly CacheHandler $cache;
+    private false|string $cacheFile;
 
     /**
-     * @param array<string, string>                 $parameters        [placeholder]
-     * @param ?ParameterBagInterface                $parameterBag
-     * @param ?CacheItemPoolInterface               $cache
-     * @param null|bool|ProfilerInterface|Stopwatch $profiler
-     * @param bool                                  $deferCacheCommits
+     * The current stored hash
+     *
+     * @var ?non-empty-string
+     */
+    private ?string $hash = null;
+
+    /** @var array<non-empty-string, string> */
+    private array $cached;
+
+    /** @var array<non-empty-string, string> */
+    protected array $inMemory = [];
+
+    /**
+     * @param array<non-empty-string, string> $parameters [placeholder]
+     * @param bool|non-empty-string           $cacheFile
      */
     public function __construct(
-        private readonly array                  $parameters = [],
-        private readonly ?ParameterBagInterface $parameterBag = null,
-        ?CacheItemPoolInterface                 $cache = null,
-        null|bool|Stopwatch|ProfilerInterface   $profiler = null,
-        bool                                    $deferCacheCommits = true,
+        private readonly array $parameters = [],
+        bool|string            $cacheFile = false,
     ) {
-        $this->cache = new CacheHandler(
-            adapter     : $cache,
-            deferCommit : $deferCacheCommits,
-            profiler    : $profiler,
-        );
+        if ( $cacheFile === true ) {
+            $cacheFile = $parameters['path.pathfinder_cache']
+                         ?? get_system_cache_directory().DIR_SEP.'pathfinder.cache';
+        }
+        if ( $cacheFile === false ) {
+            $this->cached = [];
+        }
+        else {
+            [
+                $this->hash,
+                $this->cached,
+            ] = \file_exists( $cacheFile )
+                    ? require $cacheFile
+                    : [null, []];
+        }
+        $this->cacheFile = $cacheFile;
     }
 
     /**
@@ -52,6 +76,11 @@ final class Pathfinder implements ActionInterface, Loggable
         null|string|Stringable $relativeTo = null,
     ) : string {
         return $this->get( $path, $relativeTo );
+    }
+
+    public function __destruct()
+    {
+        $this->commitCache();
     }
 
     /**
@@ -100,9 +129,9 @@ final class Pathfinder implements ActionInterface, Loggable
         $key = $this->cacheKey( $getPath.$relativePath );
 
         /** @var ?string $resolvedPath */
-        $resolvedPath = $this->cache->get( $key );
-
-        $resolvedPath ??= $this->resolvePath( $getPath, $relativePath );
+        $resolvedPath = $this->inMemory[$key]
+                           ?? $this->cached[$key]
+                           ?? $this->resolvePath( $getPath, $relativePath );
 
         if ( ! \is_string( $resolvedPath ) ) {
             $this->log(
@@ -112,7 +141,7 @@ final class Pathfinder implements ActionInterface, Loggable
             );
         }
         elseif ( \file_exists( $resolvedPath ) || $relativePath ) {
-            $this->cache->set( $key, $resolvedPath );
+            $this->inMemory[$key] = $resolvedPath;
         }
         // TODO: [lo] - This should be handled by a 'purge outdated' ran during cleanup,
         //              Should not be performed during runtime.
@@ -146,18 +175,14 @@ final class Pathfinder implements ActionInterface, Loggable
         $cacheKey = $this->cacheKey( $key );
 
         // Return cached parameter if found
-        if ( $cached = $this->cache->get( $cacheKey ) ) {
+        if ( $cached = ( $this->inMemory[$key] ?? $this->cached[$key] ?? null ) ) {
             return $cached;
         }
 
         $parameter = $this->parameters[$key] ?? null;
 
-        if ( ! $parameter && $this->parameterBag?->has( $key ) ) {
-            $parameter = $this->parameterBag->get( $key );
-        }
-
         // Handle value errors
-        if ( ! $parameter || ! \is_string( $parameter ) ) {
+        if ( ! \is_string( $parameter ) || empty( $parameter ) ) {
             $value = \is_string( $parameter )
                     ? 'empty string'
                     : \gettype( $parameter );
@@ -183,14 +208,14 @@ final class Pathfinder implements ActionInterface, Loggable
         }
 
         if ( \file_exists( $parameter ) ) {
-            $this->cache->set( $cacheKey, $parameter );
+            $this->inMemory[$cacheKey] = $parameter;
         }
 
         return $parameter;
     }
 
     /**
-     * Check if a key exists in {@see self::$parameters} or a provided {@see self::$parameterBag}.
+     * Check if a key exists in {@see self::$parameters}.
      *
      * @param string $key
      *
@@ -198,7 +223,87 @@ final class Pathfinder implements ActionInterface, Loggable
      */
     public function hasParameter( string $key ) : bool
     {
-        return \array_key_exists( $key, $this->parameters ) || $this->parameterBag?->has( $key );
+        return \array_key_exists( $key, $this->parameters );
+    }
+
+    public function commitCache( bool $force = false, ?string $cacheFile = null ) : bool
+    {
+        $cacheFile ??= $this->cacheFile;
+
+        if ( ! $cacheFile ) {
+            return false;
+        }
+
+        $data = [...$this->inMemory, ...$this->cached];
+
+        if ( empty( $data ) ) {
+            return false;
+        }
+
+        $storageDataHash = \hash( 'xxh64', \json_encode( $data ) ?: \serialize( $data ) );
+
+        if ( $storageDataHash === ( $this->hash ?? null ) ) {
+            return false;
+        }
+
+        $dateTime           = datetime();
+        $timestamp          = $dateTime->getTimestamp();
+        $formattedTimestamp = $dateTime->format( 'Y-m-d H:i:s e' );
+
+        $localStorage['head'] = <<<PHP
+            <?php
+            
+            /*------------------------------------------------------%{$timestamp}%-
+            
+               Name      : Pathfinder Cache
+               Generated : {$formattedTimestamp}
+            
+               Do not edit it manually.
+            
+            -#{$storageDataHash}#------------------------------------------------*/
+            PHP;
+
+        $localStorage['return'] = 'return [';
+        $localStorage['hash']   = TAB."'{$storageDataHash}',";
+        $localStorage[]         = TAB.'[';
+
+        $longestKey = \max( \array_map( 'strlen', \array_keys( $data ) ) ) + 2;
+
+        foreach ( $data as $key => $value ) {
+            $key            = \str_pad( "'{$key}'", $longestKey );
+            $localStorage[] = TAB.TAB."{$key} => '{$value}',";
+        }
+        $localStorage[]        = TAB.'],';
+        $localStorage['close'] = '];'.NEWLINE;
+
+        $php = \implode( NEWLINE, $localStorage );
+        $php = \str_replace( TAB, '    ', $php );
+
+        return (bool) file_save( $cacheFile, $php );
+    }
+
+    public function count() : int
+    {
+        return \count( $this->cached );
+    }
+
+    public function clearCache() : self
+    {
+        $this->cached = [];
+        return $this;
+    }
+
+    public function pruneCache() : self
+    {
+        foreach ( $this->cached as $key => $value ) {
+            if ( path_valid( $value ) ) {
+                continue;
+            }
+
+            unset( $this->cached[$key] );
+        }
+
+        return $this;
     }
 
     protected function resolveNestedParameters( string $parameter ) : string
@@ -265,7 +370,7 @@ final class Pathfinder implements ActionInterface, Loggable
         $cacheKey = $this->cacheKey( $string );
 
         // Return cached parameter if found
-        if ( $cached = $this->cache->get( $cacheKey ) ) {
+        if ( $cached = ( $this->inMemory[$cacheKey] ?? $this->cached[$cacheKey] ?? null ) ) {
             return $cached;
         }
 
@@ -297,7 +402,7 @@ final class Pathfinder implements ActionInterface, Loggable
         }
 
         if ( $exists = \file_exists( $path ) ) {
-            $this->cache->set( $cacheKey, $path );
+            $this->inMemory[$cacheKey] = $path;
         }
 
         if ( $parameterKey && ! $exists ) {
@@ -314,6 +419,8 @@ final class Pathfinder implements ActionInterface, Loggable
     /**
      * @param string $key
      *
+     * @phpstan-assert-if-true  non-empty-string $key
+     *
      * @return bool
      */
     public static function validKey( string $key ) : bool
@@ -323,8 +430,8 @@ final class Pathfinder implements ActionInterface, Loggable
             return false;
         }
 
-        /** Only `[a-zA-Z.-_]` allowed */
-        if ( ! \ctype_alpha( \str_replace( ['.', '-', '_'], '', $key ) ) ) {
+        /** Only `[a-zA-Z.-_/]` allowed */
+        if ( ! \ctype_alpha( \str_replace( ['.', '-', '_', '/'], '', $key ) ) ) {
             return false;
         }
 
@@ -332,9 +439,19 @@ final class Pathfinder implements ActionInterface, Loggable
         return ! ( \str_starts_with( $key, '.' ) || \str_ends_with( $key, '.' ) );
     }
 
+    /**
+     * @param null|bool|int|string|Stringable ...$from
+     *
+     * @return non-empty-string
+     */
     private function cacheKey( null|string|bool|int|Stringable ...$from ) : string
     {
-        $string = \implode( '', $from );
+        $string = \strtr( \implode( '', $from ), '\\', '/' );
+
+        if ( \str_contains( $string, '/' ) ) {
+            [$key, $path] = \explode( '/', $string, 2 );
+            $string       = "{$key}/".slug( $path );
+        }
 
         if ( $this::validKey( $string ) ) {
             return $string;
