@@ -19,6 +19,7 @@ class Path implements Stringable
     public function __construct( Stringable|string $path )
     {
         $this->setFileInfo( $path );
+        dump( pathfinder : $this );
     }
 
     final public function append( string|Stringable $string ) : self

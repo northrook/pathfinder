@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Core;
 
-use Core\Autowire\Logger;
-use Core\Pathfinder\Path;
-use Core\Interface\PathfinderInterface;
+use Core\Contracts\Autowire\Logger;
+use Core\Contracts\PathfinderInterface;
+use InvalidArgumentException;
 use Stringable, Countable;
 use function Support\{
     get_system_cache_directory,
@@ -68,14 +68,17 @@ final class Pathfinder implements PathfinderInterface, Countable
     /**
      * @param string|Stringable      $path
      * @param null|string|Stringable $relativeTo
+     * @param bool                   $nullable
      *
-     * @return string
+     * @return ($nullable is true ? null|string : string )
+     * @throws ($nullable is true ? never : InvalidArgumentException )
      */
     public function __invoke(
         string|Stringable      $path,
         null|string|Stringable $relativeTo = null,
-    ) : string {
-        return $this->get( $path, $relativeTo );
+        bool                   $nullable = false,
+    ) : ?string {
+        return $this->getPath( $path, $relativeTo, $nullable );
     }
 
     public function __destruct()
@@ -84,45 +87,39 @@ final class Pathfinder implements PathfinderInterface, Countable
     }
 
     /**
-     * @param string|Stringable      $path
-     * @param null|string|Stringable $relativeTo
-     *
-     * @return Path
-     */
-    public function getPath(
-        string|Stringable      $path,
-        null|string|Stringable $relativeTo = null,
-    ) : Path {
-        $path = $this->get( $path, $relativeTo );
-
-        return new Path( $path );
-    }
-
-    /**
      * A `normalizeUrl` filtered string.
      *
      * @param string|Stringable      $path
      * @param null|string|Stringable $relativeTo
+     * @param bool                   $nullable
      *
-     * @return string
+     * @return ($nullable is true ? null|string : string )
+     * @throws ($nullable is true ? never : InvalidArgumentException )
      */
     public function getUrl(
         string|Stringable      $path,
         null|string|Stringable $relativeTo = null,
-    ) : string {
-        return normalize_url( $this->get( $path, $relativeTo ) );
+        bool                   $nullable = false,
+    ) : ?string {
+        // $path = $this->getPath( $path, $relativeTo );
+
+        return normalize_url( $this->getPath( $path, $relativeTo ) )
+                ?: ( $nullable ? null : throw new InvalidArgumentException() );
     }
 
     /**
      * @param string|Stringable      $path
      * @param null|string|Stringable $relativeTo
+     * @param bool                   $nullable
      *
-     * @return string
+     * @return ($nullable is true ? null|string : string )
+     * @throws ($nullable is true ? never : InvalidArgumentException )
      */
-    public function get(
+    public function getPath(
         string|Stringable      $path,
         null|string|Stringable $relativeTo = null,
-    ) : string {
+        bool                   $nullable = false,
+    ) : ?string {
         $getPath      = (string) $path;
         $relativePath = $relativeTo ? (string) $relativeTo : null;
 
@@ -134,22 +131,21 @@ final class Pathfinder implements PathfinderInterface, Countable
                            ?? $this->resolvePath( $getPath, $relativePath );
 
         if ( ! \is_string( $resolvedPath ) ) {
-            $this->log(
+            $this->logger->notice(
                 'Unable to resolve path from {key}: {path}.',
                 ['key' => $key, 'path' => $path],
-                'notice',
             );
         }
         elseif ( \file_exists( $resolvedPath ) || $relativePath ) {
-            $this->inMemory[$key] = $resolvedPath;
+            return $this->inMemory[$key] = $resolvedPath;
         }
-        // TODO: [lo] - This should be handled by a 'purge outdated' ran during cleanup,
-        //              Should not be performed during runtime.
-        // else {
-        //     $this->uncache->$this->set( $key );
-        // }
 
-        return $resolvedPath ?? $getPath;
+        return $resolvedPath
+                ?: (
+                    $nullable
+                        ? null
+                        : throw new InvalidArgumentException()
+                );
     }
 
     /**
@@ -187,10 +183,9 @@ final class Pathfinder implements PathfinderInterface, Countable
                     ? 'empty string'
                     : \gettype( $parameter );
 
-            $this->log(
+            $this->logger->warning(
                 'No value for {key}, it is {value}',
                 ['value' => $value, 'key' => $key],
-                'warning',
             );
             return null;
         }
@@ -203,7 +198,10 @@ final class Pathfinder implements PathfinderInterface, Countable
         $parameter = normalize_path( $parameter );
 
         if ( ! is_path( $parameter ) ) {
-            $this->log( 'The value for {key} is not path-like.', ['key' => $key], 'warning' );
+            $this->logger->warning(
+                'The value for {key} is not path-like.',
+                ['key' => $key],
+            );
             return null;
         }
 
@@ -318,10 +316,9 @@ final class Pathfinder implements PathfinderInterface, Countable
                 $resolve = $this->getParameter( $match[1] );
 
                 if ( ! $resolve ) {
-                    $this->log(
+                    $this->logger->warning(
                         'Unable to resolve parameter {key} in {parameter}.',
-                        ['key' => $match[1], 'parameter' => $parameter],
-                        'warning',
+                        ['key' => $match[1], 'parameter' => $parameter, 'match' => $match],
                     );
                 }
                 return $resolve ?? $match[0];
@@ -354,10 +351,9 @@ final class Pathfinder implements PathfinderInterface, Countable
             }
             // Handle mismatched relative paths
             else {
-                $this->log(
+                $this->logger->critical(
                     'Relative path {relativeTo} to {path} is not valid.',
-                    ['relativeTo' => $relativeTo, 'path' => $path],
-                    'critical',
+                    \get_defined_vars(),
                 );
             }
         }
@@ -382,13 +378,9 @@ final class Pathfinder implements PathfinderInterface, Countable
 
             // Bail early on empty parameters
             if ( ! $parameter ) {
-                $this->log(
+                $this->logger->error(
                     'Pathfinder: {parameterKey}:{path}, could not resolve parameter.',
-                    [
-                        'parameterKey' => $parameterKey,
-                        'path'         => $path,
-                    ],
-                    'error',
+                    \get_defined_vars(),
                 );
                 return null;
             }
@@ -406,10 +398,9 @@ final class Pathfinder implements PathfinderInterface, Countable
         }
 
         if ( $parameterKey && ! $exists ) {
-            $this->log(
+            $this->logger->notice(
                 'Pathfinder: {parameterKey}:{path}, the path does not exist.',
                 \get_defined_vars(),
-                'notice',
             );
         }
 
