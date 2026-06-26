@@ -1,15 +1,13 @@
 ### Editor
 /.ide/
+/.dev/
 /.idea/
 *.code-workspace
 
 ### Dev
-/src/PathfinderCache.php
-/var
 /vendor
-/node_modules
+/var
 /*.cache
-/*.lock
-/*.css
 /index.php
-/package-lock.json
+.env
+package-lock.json

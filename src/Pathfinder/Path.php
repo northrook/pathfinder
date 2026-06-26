@@ -2,42 +2,79 @@
 
 declare(strict_types=1);
 
-namespace Core\Pathfinder;
+namespace Northrook\Core\Pathfinder;
 
-use Symfony\Component\Filesystem\Filesystem;
-use Stringable, SplFileInfo, ValueError, InvalidArgumentException, RuntimeException, BadMethodCallException;
-use function Support\{is_path, is_url, normalize_path};
-use const LOCK_EX;
+use InvalidArgumentException;
+use Northrook\Contracts\Exceptions\FilesystemException;
+use Northrook\Contracts\Interfaces\FilesystemInterface;
+use Northrook\Core\Filesystem;
+use RuntimeException;
+use SplFileInfo;
+use Stringable;
+use ValueError;
 
-class Path implements Stringable
+use function Northrook\Core\is_path;
+use function Northrook\Core\is_url;
+use function Northrook\Core\normalize_path;
+use function Northrook\Core\normalize_slashes;
+
+/**
+ * Mutable path or URL wrapper produced by {@see \Northrook\Core\Pathfinder::path()}.
+ *
+ * Local paths support filesystem operations via the injected {@see FilesystemInterface}.
+ * URLs support segment and query-string appending; use Core HTTP helpers for remote I/O.
+ */
+final class Path implements Stringable
 {
-    protected SplFileInfo $fileInfo;
+    private readonly FilesystemInterface $filesystem;
+    private SplFileInfo $fileInfo;
 
-    /** @var array<int|string, array<array-key,mixed>|string> `[query=>param]` */
-    protected array $queryParameters = [];
+    /** @var array<int|string,array<array-key,mixed>|string> */
+    private array $queryParameters = [];
 
-    public function __construct( Stringable|string $path )
-    {
-        $this->setFileInfo( $path );
-        dump( pathfinder : $this );
+    /**
+     * @param Stringable|string $path        A local path or URL string.
+     * @param null|FilesystemInterface $filesystem  Defaults to a new {@see Filesystem} instance.
+     */
+    public function __construct(
+        Stringable|string $path,
+        null|FilesystemInterface $filesystem = null,
+    ) {
+        $this->filesystem = $filesystem ?? new Filesystem();
+        $this->setFileInfo($path);
     }
 
-    final public function append( string|Stringable $string ) : self
-    {
+    /**
+     * Appends a path segment or URL query string.
+     *
+     * - `?foo=bar` merges query parameters (URLs only; later keys override).
+     * - Other strings are concatenated to the current pathname.
+     * - Appending to an existing file path throws {@see ValueError}.
+     *
+     * @throws InvalidArgumentException When query parameters are appended to a local path.
+     * @throws ValueError               When appending a path segment to an existing file.
+     */
+    final public function append(
+        string|Stringable $string,
+    ): self {
         $path = (string) $string;
 
-        if ( \str_starts_with( $path, '?' ) ) {
-            // TODO: [low] Improve compatibility
-            \parse_str( $path, $this->queryParameters );
+        if (\str_starts_with($path, '?')) {
+            $this->appendQueryString(\substr($path, 1));
             return $this;
         }
 
-        if ( ! $this->fileInfo->isFile() ) {
-            $this->setFileInfo( $this->fileInfo->getPathname().$path );
+        if ($this->isUrl()) {
+            $this->setFileInfo($this->fileInfo->getPathname() . $path);
+            return $this;
         }
-        else {
+
+        if (! $this->filesystem->isFile($this->fileInfo->getPathname())) {
+            $this->setFileInfo($this->fileInfo->getPathname() . $path);
+        } else {
             throw new ValueError(
-                __METHOD__."\nThe path '{$this->fileInfo->getPathname()}' is a file path, and should not be appended by another file path '{$path}'.",
+                __METHOD__
+                . "\nThe path '{$this->fileInfo->getPathname()}' is a file path, and should not be appended by another file path '{$path}'.",
             );
         }
 
@@ -45,277 +82,342 @@ class Path implements Stringable
     }
 
     /**
-     * Atomically dumps content into a file.
+     * Atomically writes `$content` to the path.
      *
-     * - {@see IOException} will be caught and logged as an error, returning false
-     *
-     * @param resource|string $content                 The data to write into the file
-     * @param bool            $lock
-     * @param bool            $makeRequiredDirectories
-     *
-     * @return bool|int True if the file was written to, false if it already existed, or an error occurred
+     * @param resource|string $content
      */
     final public function save(
         mixed $content,
-        bool  $lock = false,
-        bool  $makeRequiredDirectories = true,
-    ) : bool|int {
-        if ( $makeRequiredDirectories ) {
+        bool $makeRequiredDirectories = true,
+    ): bool {
+        $this->assertLocalPath(__METHOD__);
+
+        if ($makeRequiredDirectories) {
             $this->mkdir();
         }
 
-        return \file_put_contents( $this->fileInfo->getPathname(), $content, $lock ? LOCK_EX : 0 );
-    }
+        try {
+            $this->filesystem->writeFileAtomically($this->fileInfo->getPathname(), $content);
 
-    final public function mkdir( int $permissions = 0777, bool $recursive = true ) : bool
-    {
-        $dir = \dirname( $this->fileInfo->getPathname() );
-        if ( ! \is_dir( $dir ) ) {
-            return \mkdir( $dir, $permissions, $recursive );
+            return true;
+        } catch (FilesystemException) {
+            return false;
         }
-        return true;
     }
 
     /**
-     * Copies {@see self::getRealPath()} to {@see $targetFile}.
+     * Creates the parent directory of this path when it does not exist.
      *
-     * - Requires {@see Filesystem}.
-     * - If the target file is automatically overwritten when this file is newer.
-     * - If the target is newer, $overwriteNewerFiles decides whether to overwrite.
-     * - {@see IOException}s will be caught and logged as an error, returning false
-     *
-     * @param string $targetFile
-     * @param bool   $overwriteNewerFiles
-     *
-     * @return bool True if the file was written to, false if it already existed, or an error occurred
+     * @throws InvalidArgumentException When this path is a URL.
      */
-    final public function copy( string $targetFile, bool $overwriteNewerFiles = false ) : bool
-    {
-        // TODO : Use \Support\file_copy
-        if ( \class_exists( Filesystem::class ) ) {
-            ( new Filesystem() )->copy( $this->fileInfo->getPathname(), $targetFile, $overwriteNewerFiles );
+    final public function mkdir(
+        int $permissions = 0777,
+        bool $recursive = true,
+    ): bool {
+        $this->assertLocalPath(__METHOD__);
+
+        $dir = \dirname($this->fileInfo->getPathname());
+
+        if ($this->filesystem->pathsExist($dir)) {
+            return true;
         }
 
-        throw new BadMethodCallException( __METHOD__." requires the 'symfony/filesystem' package." );
+        try {
+            $this->filesystem->createDirectory($dir, $permissions);
+
+            return true;
+        } catch (FilesystemException) {
+            return false;
+        }
     }
 
     /**
-     * Remove the file or directory located at {@see self::$fileInfo}.
+     * Copies this path to `$target`.
+     *
+     * @throws InvalidArgumentException When this path is a URL.
      */
-    final public function remove() : void
-    {
-        // TODO : Use \Support\file_remove
-        if ( \class_exists( Filesystem::class ) ) {
-            ( new Filesystem() )->remove( $this->fileInfo->getPathname() );
-            return;
-        }
+    final public function copy(
+        string $target,
+        bool $alwaysOverwrite = false,
+    ): bool {
+        $this->assertLocalPath(__METHOD__);
 
-        throw new BadMethodCallException( __METHOD__." requires the 'symfony/filesystem' package." );
+        try {
+            $this->filesystem->copyFile($this->fileInfo->getPathname(), $target, $alwaysOverwrite);
+
+            return true;
+        } catch (FilesystemException) {
+            return false;
+        }
     }
 
-    final public function exists( bool $throwOnError = false ) : bool
+    /**
+     * Removes the file or directory at this path.
+     *
+     * @throws InvalidArgumentException When this path is a URL.
+     */
+    final public function remove(): void
     {
-        $exists = \file_exists( $this->fileInfo->getPathname() );
+        $this->assertLocalPath(__METHOD__);
 
-        if ( $exists === false && $throwOnError ) {
-            throw new RuntimeException( 'Unable to read file: '.$this->fileInfo->getPathname() );
+        $this->filesystem->remove($this->fileInfo->getPathname());
+    }
+
+    /**
+     * @throws InvalidArgumentException When this path is a URL.
+     * @throws RuntimeException           When `$throwOnError` is true and the path does not exist.
+     */
+    final public function exists(bool $throwOnError = false): bool
+    {
+        $this->assertLocalPath(__METHOD__);
+
+        $exists = $this->filesystem->pathsExist($this->fileInfo->getPathname());
+
+        if ($exists === false && $throwOnError) {
+            throw new RuntimeException('Unable to read file: ' . $this->fileInfo->getPathname());
         }
 
         return $exists;
     }
 
-    final public function isPath() : bool
+    /** Whether the pathname is path-like per {@see is_path()}. */
+    final public function isPath(): bool
     {
-        return is_path( $this->fileInfo->getPathname() );
+        return is_path($this->fileInfo->getPathname());
     }
 
-    final public function isFile() : bool
+    /** @throws InvalidArgumentException When this path is a URL. */
+    final public function isFile(): bool
     {
-        return $this->fileInfo->isFile();
+        $this->assertLocalPath(__METHOD__);
+
+        return $this->filesystem->isFile($this->fileInfo->getPathname());
     }
 
-    final public function isDirectory() : bool
+    /** @throws InvalidArgumentException When this path is a URL. */
+    final public function isDirectory(): bool
     {
-        return $this->fileInfo->isDir();
+        $this->assertLocalPath(__METHOD__);
+
+        return $this->filesystem->isDirectory($this->fileInfo->getPathname());
     }
 
-    final public function isDotFile() : bool
+    /** Whether the basename starts with `.` (hidden path segment; existence not required). */
+    final public function isDotPath(): bool
     {
-        return \str_starts_with( $this->fileInfo->getBasename(), '.' ) && $this->isFile();
+        return \str_starts_with($this->fileInfo->getBasename(), '.');
     }
 
-    final public function isDotDirectory() : bool
+    /** @throws InvalidArgumentException When this path is a URL. */
+    final public function isDotFile(): bool
     {
-        return \str_contains( $this->fileInfo->getPath(), DIR_SEP.'.' );
+        return $this->isDotPath() && $this->isFile();
     }
 
-    final public function isUrl( ?string $protocol = null ) : bool
+    /**
+     * Whether this path is an existing directory inside a hidden segment (e.g. `.git`, `foo/.hidden`).
+     *
+     * @throws InvalidArgumentException When this path is a URL.
+     */
+    final public function isDotDirectory(): bool
     {
-        return is_url( $this->fileInfo->getPathname(), $protocol );
+        $this->assertLocalPath(__METHOD__);
+
+        return $this->isDirectory()
+            && \str_contains($this->fileInfo->getPathname(), DIR_SEP . '.');
     }
 
-    final public function isRelative( bool $traversible = false ) : bool
+    /** Whether the pathname is a URL, optionally restricted to `$protocol`. */
+    final public function isUrl(null|string $protocol = null): bool
     {
-        return \str_starts_with(
-            $this->getPathname(),
-            $traversible
-                        ? '..'.DIR_SEP
-                        : DIR_SEP,
-        );
+        return is_url($this->fileInfo->getPathname(), $protocol);
     }
 
-    final public function isReadable() : bool
+    /** Whether the pathname is relative (does not begin with {@see DIR_SEP}). */
+    final public function isRelative(): bool
     {
-        if ( $this->isUrl() ) {
-            $session = \curl_init( $this->fileInfo->getPathname() );
-
-            // Set cURL options
-            \curl_setopt( $session, CURLOPT_NOBODY, true );         // Use HEAD request
-            \curl_setopt( $session, CURLOPT_TIMEOUT, 5 );           // Set timeout
-            \curl_setopt( $session, CURLOPT_FOLLOWLOCATION, true ); // Follow redirects
-            \curl_setopt( $session, CURLOPT_FAILONERROR, true );    // Fail on HTTP errors (e.g., 404)
-            \curl_setopt( $session, CURLOPT_RETURNTRANSFER, true ); // Suppress direct output
-
-            \curl_exec( $session );
-
-            $httpCode  = \curl_getinfo( $session, CURLINFO_HTTP_CODE );
-            $hasErrors = (bool) \curl_errno( $session );
-            $cUrlError = \curl_error( $session );
-
-            \curl_close( $session );
-
-            if ( $hasErrors ) {
-                throw new InvalidArgumentException(
-                    __METHOD__." cURL [{$httpCode}] error: ".$cUrlError,
-                );
-            }
-
-            return $httpCode >= 200 && $httpCode < 400;
-        }
-
-        return $this->fileInfo->isReadable();
+        return ! \str_starts_with($this->getPathname(), DIR_SEP);
     }
 
-    final public function SplFileInfo() : SplFileInfo
+    /** @throws InvalidArgumentException When this path is a URL. */
+    final public function isReadable(): bool
+    {
+        $this->assertLocalPath(__METHOD__);
+
+        return $this->filesystem->isReadable($this->fileInfo->getPathname());
+    }
+
+    /** The underlying {@see SplFileInfo} instance. */
+    final public function getSplFileInfo(): SplFileInfo
     {
         return $this->fileInfo;
     }
 
-    final public function getExtension() : string
+    /** File extension per {@see SplFileInfo::getExtension()}. */
+    final public function getExtension(): string
     {
         return $this->fileInfo->getExtension();
     }
 
     /**
-     * @param bool $falseOnError
+     * Resolves symbolic links and returns a normalized absolute path.
      *
      * @return ($falseOnError is true ? false|string : string)
+     * @throws InvalidArgumentException When this path is a URL.
      */
-    final public function getRealPath( bool $falseOnError = false ) : false|string
+    final public function getRealPath(bool $falseOnError = false): false|string
     {
-        $path = $this->fileInfo->getRealPath();
+        $this->assertLocalPath(__METHOD__);
 
-        if ( $falseOnError ) {
-            return $path;
+        $path = $this->filesystem->resolvePath($this->fileInfo->getPathname());
+
+        if ($falseOnError) {
+            return $path ?? false;
         }
 
-        return $this->normalize( $path ?: $this->fileInfo->getPathname() );
+        return normalize_slashes($path ?: $this->fileInfo->getPathname());
     }
 
-    public function getPathname() : string
+    /** Full pathname, including URL query string when present. */
+    public function getPathname(): string
     {
-        return $this->normalize( $this->fileInfo->getPathname() );
+        return normalize_slashes($this->fileInfo->getPathname());
     }
 
-    public function getPath() : string
+    /** Directory portion of the pathname per {@see SplFileInfo::getPath()}. */
+    public function getPath(): string
     {
-        return $this->normalize( $this->fileInfo->getPath() );
+        return normalize_slashes($this->fileInfo->getPath());
+    }
+
+    /** Basename without the extension. */
+    final public function getFilename(): string
+    {
+        return normalize_slashes(\strrchr($this->fileInfo->getFilename(), '.', true) ?: $this->fileInfo->getFilename());
     }
 
     /**
-     * Returns the `filename` without the extension.
-     *
-     * @return string
+     * @throws InvalidArgumentException When this path is a URL.
+     * @throws RuntimeException           When `$throwOnError` is true and reading fails.
      */
-    final public function getFilename() : string
+    final public function getContents(bool $throwOnError = false): null|string
     {
-        return $this->normalize(
-            \strrchr( $this->fileInfo->getFilename(), '.', true ) ?: $this->fileInfo->getFilename(),
-        );
-    }
+        $this->assertLocalPath(__METHOD__);
 
-    final public function getContents( bool $throwOnError = false ) : ?string
-    {
-        if ( $this->isUrl() ) {
-            if ( $throwOnError ) {
-                $message = $this::class.'::getContents() only supports local files.';
-                $instead = 'Use \Support\CURL::fetch() instead.';
-                throw new InvalidArgumentException( "{$message} {$instead}" );
+        try {
+            return $this->filesystem->readFile($this->fileInfo->getPathname());
+        } catch (FilesystemException $exception) {
+            if ($throwOnError) {
+                throw new RuntimeException('Unable to read file: ' . $this->getPathname(), previous: $exception);
             }
+
             return null;
         }
-
-        $contents = \file_get_contents( $this->fileInfo->getPathname() );
-
-        if ( $contents === false && $throwOnError ) {
-            throw new RuntimeException( 'Unable to read file: '.$this->getPathname() );
-        }
-
-        return $contents ?: null;
     }
 
     /**
-     * Perform one or more `glob(..)` patterns on {@see self::getPathname()}.
-     *
-     * Each matched result is `normalized`.
+     * Runs `glob()` patterns relative to this path's directory.
      *
      * @param string|string[] $pattern
-     * @param ?int            $flags   [auto]
      *
      * @return self[]
+     * @throws InvalidArgumentException When this path is a URL.
      */
     final public function glob(
         string|array $pattern,
-        ?int         $flags = null,
-    ) : array {
+        null|int $flags = null,
+    ): array {
+        $this->assertLocalPath(__METHOD__);
+
         $flags ??= GLOB_NOSORT | GLOB_BRACE;
-        $path = \rtrim( $this->fileInfo->getPathname(), '\\/' );
-        $glob = [];
+        $path  = \rtrim($this->fileInfo->getPathname(), '\\/');
+        $glob  = [];
 
-        foreach ( (array) $pattern as $match ) {
-            $match = \DIR_SEP.\ltrim( $match, '\\/' );
-            $glob  = [...$glob, ...( \glob( $path.$match, $flags ) ?: [] )];
+        foreach ((array) $pattern as $match) {
+            $match = \DIR_SEP . \ltrim($match, '\\/');
+            $glob  = [...$glob, ...( \glob($path . $match, $flags) ?: [] )];
         }
 
-        return \array_map( self::from( ... ), $glob );
+        return \array_map(fn(string $match): self => new self($match, $this->filesystem), $glob);
     }
 
-    /**
-     * Returns {@see realpath} if cached.
-     *
-     * @return string
-     */
-    public function __toString() : string
+    /** {@see getPathname()} for URLs; {@see getRealPath()} for local paths. */
+    public function __toString(): string
     {
-        return $this->getRealPath();
+        return $this->isUrl() ? $this->getPathname() : $this->getRealPath();
     }
 
-    final protected function setFileInfo( Stringable|string $path ) : void
+    /** Named constructor equivalent to `new self(…)`. */
+    final public static function from(
+        string|Stringable $filename,
+        null|FilesystemInterface $filesystem = null,
+    ): self {
+        return new self($filename, $filesystem);
+    }
+
+    /** @throws InvalidArgumentException When a filesystem operation is attempted on a URL. */
+    private function assertLocalPath(string $method): void
     {
-        $string = (string) $path;
-        if ( ! \str_contains( $string, '://' ) ) {
-            $string = normalize_path( $string );
+        if ($this->isUrl()) {
+            throw new InvalidArgumentException(
+                "{$method} does not support remote URLs; use Core HTTP helpers instead.",
+            );
         }
-        $this->fileInfo = new SplFileInfo( $string );
     }
 
-    final public static function from( string|Stringable $filename ) : self
+    /** Merges `$query` into the URL and rebuilds the query string. */
+    private function appendQueryString(string $query): void
     {
-        return new self( $filename );
+        if (! $this->isUrl()) {
+            throw new InvalidArgumentException('Query parameters can only be appended to URLs.');
+        }
+
+        $pathname = $this->fileInfo->getPathname();
+        $base     = $pathname;
+
+        if (\str_contains($pathname, '?')) {
+            $base        = (string) \strstr($pathname, '?', true);
+            $queryOffset = \strpos($pathname, '?') + 1;
+            $existing    = [];
+            \parse_str(\substr($pathname, $queryOffset), $existing);
+            $this->queryParameters = [...$this->queryParameters, ...$existing];
+        }
+
+        if ($query !== '') {
+            $parsed = [];
+            \parse_str($query, $parsed);
+            $this->queryParameters = [...$this->queryParameters, ...$parsed];
+        }
+
+        $built = \http_build_query($this->queryParameters, '', '&', \PHP_QUERY_RFC3986);
+
+        $this->fileInfo = new SplFileInfo($built !== '' ? "{$base}?{$built}" : $base);
     }
 
-    private function normalize( string|Stringable $path ) : string
+    /** Normalizes local paths; parses query parameters from URLs. */
+    private function setFileInfo(Stringable|string $path): void
     {
-        return \strtr( (string) $path, '\\', DIR_SEP );
+        $string                = (string) $path;
+        $this->queryParameters = [];
+
+        if (! \str_contains($string, '://')) {
+            $this->fileInfo = new SplFileInfo(normalize_path($string));
+            return;
+        }
+
+        if (\str_contains($string, '?')) {
+            [$string, $query] = \explode('?', $string, 2);
+
+            if ($query !== '') {
+                \parse_str($query, $this->queryParameters);
+            }
+        }
+
+        if ($this->queryParameters !== []) {
+            $built  = \http_build_query($this->queryParameters, '', '&', \PHP_QUERY_RFC3986);
+            $string = "{$string}?{$built}";
+        }
+
+        $this->fileInfo = new SplFileInfo($string);
     }
 }
